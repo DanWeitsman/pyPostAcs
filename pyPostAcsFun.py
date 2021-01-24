@@ -5,10 +5,11 @@ By Daniel Weitsman
 '''
 
 import os
-from shutil import rmtree
 import numpy as np
 from scipy.fft import fft
 import matplotlib.pyplot as plt
+import h5py
+
 #%%
 fontName = 'Times New Roman'
 fontSize = 12
@@ -19,24 +20,40 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 
-def apply_fun_to_folder(dir):
+def apply_fun_to_h5(dir, function):
+
     '''
-    This function applies a given function to all folders containing a acs_data.h5 file
-    :param dir:
+    This function finds all the acs_data.h5 files contained in a directory and all of its subdirectories and applies
+    the specified functions to the data set contained in each h5 file.
+    :param dir: The parent directory within which to search for the acs_data.h5 files
+    to search for the h5
+    :param function: A list of functions which to run on each of the detected acs_data.h5 files.
     :return:
     '''
+
+    #   Checks to ensure that functions are provided in a list
+    assert isinstance(function, list), 'Functions must be inputed to this function in a list'
+
+    #   Loops through each subfolder in a directory until arriving at the base folder
     for item in os.listdir(dir):
         if os.path.isdir(os.path.join(dir, item)):
-            apply_fun_to_folder(os.path.join(dir, item))
+            apply_fun_to_h5(os.path.join(dir, item), function)
+
+    #   Checks whether the acs_data.h5 exists in current directory
     if os.path.exists(os.path.join(dir, 'acs_data.h5')):
         print('h5 file exists in' + dir)
+    #   Makes a new 'Figures' folder in the current directory
         if os.path.exists(os.path.join(dir, 'Figures')) is False:
             os.mkdir(os.path.join(dir, 'Figures'))
+    #   Opens the acs_data.h5 file and executes all the specified functions
+        with h5py.File(os.path.join(dir, 'acs_data.h5'),'r') as dat_file:
+            for f in function:
+                f(dat_file,os.path.join(dir, 'Figures'))
     else:
         print('h5 file does not exist in' + dir)
 
 
-def msPSD(xn, fs, df = 5, win = '', ovr = 0):
+def msPSD(xn, fs, df = 5, win = True, ovr = 0, axis_lim =[10,5e3,0,100] ,save_fig = True, save_path = ''):
     '''
     This function computes the single and double sided mean-square averaged PSD for a given time series
     :param xn: time series
@@ -48,6 +65,9 @@ def msPSD(xn, fs, df = 5, win = '', ovr = 0):
     :param f: frequency vector
     :param Gxx_avg: mean-square averaged single-sided PSD
     '''
+
+    #todo add argument for mic number to set as titles
+
     if len(np.shape(xn)) ==1:
         xn = np.expand_dims(xn,axis = 1)
     #   points per record
@@ -55,7 +75,7 @@ def msPSD(xn, fs, df = 5, win = '', ovr = 0):
     #   constructs frequency array
     f = np.arange(int(N/2)) * df
     #   returns rms normalized Hanning window if no window is applied an array of ones is returned
-    if win == 'hann':
+    if win is True:
         W = hann(N, fs)
     else:
         W = np.ones(N)
@@ -76,6 +96,7 @@ def msPSD(xn, fs, df = 5, win = '', ovr = 0):
         #   computes linear spectrum for each record and populates matrix
         for i in range(Nfft + 1):
             Xm[:,i,:] = (fft(xn[int(i * (1 - ovr) * N):int(i * (1 - ovr) * N + N),:].transpose() * W) * fs**-1).transpose()
+
     #   computes double-sided PSD
     Sxx = (fs**-1*N)**-1 * abs(Xm) ** 2
     #   computes single-sided PSD
@@ -83,7 +104,21 @@ def msPSD(xn, fs, df = 5, win = '', ovr = 0):
     Gxx[1:-1,:,:] = 2 * Gxx[1:-1,:,:]
     #   averages the single-sided PSD of all segments
     Gxx_avg = 1 / Nfft * np.sum(Gxx, axis=1)
-    return f, Gxx_avg
+
+    for i in range(np.shape(Gxx_avg)[1]):
+        fig, ax = plt.subplots(1,1,figsize = (6.5,4.5))
+        ax.plot(f, 10 * np.log10(Gxx[:,i] / 20e-6 ** 2))
+        ax.set_xscale('log')
+        ax.axis(axis_lim)
+        ax.set_xlabel('Frequency [Hz]')
+        ax.set_ylabel('$PSD \:dB\: (re:\: 20 \:\mu Pa/Hz)$')
+        ax.grid()
+        ax.set_title('Mic: '+str(i+1))
+
+        if save_fig is True:
+            plt.savefig(os.path.join(save_path,'PSD_spectra_m'+str(i+1)+'.png'))
+            plt.close()
+
 
 def hann(N, fs):
     '''
