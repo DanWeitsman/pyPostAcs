@@ -53,7 +53,7 @@ def apply_fun_to_h5(dir, function):
         print('h5 file does not exist in' + dir)
 
 
-def msPSD(xn, fs, df = 5, win = True, ovr = 0, axis_lim =[10,5e3,0,100] ,save_fig = True, save_path = ''):
+def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100],save_fig = True, save_path = '',plot = True):
     '''
     This function computes the single and double sided mean-square averaged PSD for a given time series
     :param xn: time series
@@ -105,20 +105,22 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, axis_lim =[10,5e3,0,100] ,save_fi
     #   averages the single-sided PSD of all segments
     Gxx_avg = 1 / Nfft * np.sum(Gxx, axis=1)
 
-    for i in range(np.shape(Gxx_avg)[1]):
-        fig, ax = plt.subplots(1,1,figsize = (6.5,4.5))
-        ax.plot(f, 10 * np.log10(Gxx[:,i] / 20e-6 ** 2))
-        ax.set_xscale('log')
-        ax.axis(axis_lim)
-        ax.set_xlabel('Frequency [Hz]')
-        ax.set_ylabel('$PSD \:dB\: (re:\: 20 \:\mu Pa/Hz)$')
-        ax.grid()
-        ax.set_title('Mic: '+str(i+1))
+    if plot is True:
+        for i in range(np.shape(Gxx_avg)[1]):
+            fig, ax = plt.subplots(1,1,figsize = (6.5,4.5))
+            ax.plot(f, 10 * np.log10(Gxx[:,i]*df / 20e-6 ** 2))
+            ax.set_xscale('log')
+            ax.axis([f_lim[0],f_lim[1],levels[0],levels[1]])
+            ax.set_xlabel('Frequency (Hz)')
+            ax.set_ylabel('SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+            ax.grid()
+            ax.set_title('Mic: '+str(i+1))
 
-        if save_fig is True:
-            plt.savefig(os.path.join(save_path,'PSD_spectra_m'+str(i+1)+'.png'))
-            plt.close()
+            if save_fig is True:
+                plt.savefig(os.path.join(save_path,'spectra_m'+str(i+1)+'.png'))
+                plt.close()
 
+    return f,Gxx,Gxx_avg
 
 def hann(N, fs):
     '''
@@ -133,7 +135,7 @@ def hann(N, fs):
     W = hann / np.sqrt(1 / N * np.sum(hann ** 2))
     return W
 
-def spectrogram(xn, fs, N, win, ovr):
+def spectrogram(xn, fs, df, win = True, ovr= 0,save_fig = True, save_path = '' ,plot = True):
     '''
     This function computes the spectrogram of a given time series
     :param xn: time array
@@ -147,32 +149,26 @@ def spectrogram(xn, fs, N, win, ovr):
     :param Gxx: resultant matrix of single-sided spectral densities [N x Nfft] [WU^2/Hz]
     '''
 
-    #   temporal resolution
-    dt = 1 / fs
-    #   number of records
-    Nfft = int(np.floor((len(xn) - N) / ((1 - ovr) * N)))
-    #   frequency resolution
-    df = 1 / (N * dt)
-    #   creates frequency array
-    f = np.arange(0, N / 2) * df
-    #   crates time array
-    t = np.arange(0, len(xn)) * dt
-    #   initiates matrix to store linear spectrum
-    Xm = np.zeros((Nfft + 1, N), complex)
-    #   returns rms normalized hanning window
-    if win == 'hann':
-        W = hann(N, fs)
-    #   computes linear spectrum for each record and populates matrix
-    for i in range(0, Nfft + 1):
-        if win == 'hann':
-            Xm[i] = fft(xn[int(i * (1 - ovr) * N):int(i * (1 - ovr) * N + N)] * W) * dt
-        else:
-            Xm[i] = fft(xn[int(i * (1 - ovr) * N):int(i * (1 - ovr) * N + N)]) * dt
-    #   computes the double sided spectral density
-    Sxx = 1 / (N * dt) * abs(Xm) ** 2
-    #   extracts single sided spectral density
-    Gxx = Sxx[:, :int(N / 2)]
-    Gxx[:, 1:-1] = 2 * Gxx[:, 1:-1]
-    #   extracts the time corresponding to the midpoint of each record
-    tspec = t[int(N / 2):-int(N / 2)][::int((1 - ovr) * N)]
-    return tspec, f, np.transpose(Gxx)
+    N = (fs**-1*df)**-1
+    t = np.arange(len(xn)) * fs**-1
+    f ,Gxx,Gxx_avg = msPSD(xn,fs,df =df,ovr = ovr,save_fig=0,win = win,plot = False,levels = [0,100])
+    t = t[int(N / 2):-int(N / 2)][::int((1 - ovr) * N)]
+
+    if plot is True:
+        for i in range(np.shape(Gxx)[2]):
+
+            levels = np.arange(levels[0], levels[1], 5)
+            fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
+            spec = ax.contourf(t, f, 10 * np.log10(np.squeeze(Gxx[:,:-1,i])*df / 20e-6 ** 2), cmap='hot', levels=levels)
+            ax.set_ylabel('Frequency (Hz)')
+            ax.set_xlabel('Time (sec)')
+            ax.set_xlim([t[0], t[-1]])
+            ax.set_ylim([0, 10000])
+            cbar = fig.colorbar(spec)
+            cbar.set_label('SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+
+            if save_fig is True:
+                plt.savefig(os.path.join(save_path, 'spectrogram_m' + str(i + 1) + '.png'))
+                plt.close()
+
+    return t, f, np.transpose(Gxx)
