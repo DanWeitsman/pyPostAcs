@@ -50,8 +50,20 @@ def apply_fun_to_h5(dir, function):
             for f in function:
                 f(dat_file,os.path.join(dir, 'Figures'))
     else:
-        print('h5 file does not exist in' + dir)
+        print('h5 file does not exist in ' + dir)
 
+def hann(N, fs):
+    '''
+    This function returns the rms normalized hanning window consisting of N points. This normalization ensures that after the window function is applied, when the spectral density is integrated it would still yield the mean square of the time series.
+    :param N: Number of points
+    :param fs: sampling frequency [Hz]
+    :return:
+    :param W: rms normalized window function
+    '''
+    dt = 1 / fs
+    hann = 1 - np.cos(2 * np.pi * np.arange(N) * dt / (N * dt))
+    W = hann / np.sqrt(1 / N * np.sum(hann ** 2))
+    return W
 
 def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100],save_fig = True, save_path = '',plot = True):
     '''
@@ -65,8 +77,6 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
     :param f: frequency vector
     :param Gxx_avg: mean-square averaged single-sided PSD
     '''
-
-    #todo add argument for mic number to set as titles
 
     if len(np.shape(xn)) ==1:
         xn = np.expand_dims(xn,axis = 1)
@@ -107,12 +117,12 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
 
     if plot is True:
         for i in range(np.shape(Gxx_avg)[1]):
-            fig, ax = plt.subplots(1,1,figsize = (6.5,4.5))
-            ax.plot(f, 10 * np.log10(Gxx[:,i]*df / 20e-6 ** 2))
+            fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+            ax.plot(f, 10 * np.log10(Gxx_avg[:,i]*df / 20e-6 ** 2))
             ax.set_xscale('log')
             ax.axis([f_lim[0],f_lim[1],levels[0],levels[1]])
             ax.set_xlabel('Frequency (Hz)')
-            ax.set_ylabel('SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+            ax.set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
             ax.grid()
             ax.set_title('Mic: '+str(i+1))
 
@@ -122,53 +132,41 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
 
     return f,Gxx,Gxx_avg
 
-def hann(N, fs):
-    '''
-    This function returns the rms normalized hanning window consisting of N points. This normalization ensures that after the window function is applied, when the spectral density is integrated it would still yield the mean square of the time series.
-    :param N: Number of points
-    :param fs: sampling frequency [Hz]
-    :return:
-    :param W: rms normalized window function
-    '''
-    dt = 1 / fs
-    hann = 1 - np.cos(2 * np.pi * np.arange(N) * dt / (N * dt))
-    W = hann / np.sqrt(1 / N * np.sum(hann ** 2))
-    return W
 
-def spectrogram(xn, fs, df, win = True, ovr= 0,save_fig = True, save_path = '' ,plot = True):
+def spectrogram(xn, fs, df, win = True, ovr= 0, f_lim = [0,10e3],levels = [0,100],save_fig = True, save_path = '' ,plot = True):
     '''
     This function computes the spectrogram of a given time series
     :param xn: time array
-    :param fs: sampling frequency [S/sec]
-    :param N: number of points in each record
-    :param win: window function, defaults to none (only the hann window is supported at this time)
+    :param fs: sampling frequency [Hz]
+    :param df: frequency resolution [hz]
+    :param win: window function (T/F) (only the Hanning window is supported at this time)
     :param ovr: percentage of overlap between subsequent records
     :return:
-    :param tspec: resultant time vector corresponding to the midpoint of each record [s]
+    :param t: resultant time vector corresponding to the midpoint of each record [s]
     :param f: frequency vector [Hz]
-    :param Gxx: resultant matrix of single-sided spectral densities [N x Nfft] [WU^2/Hz]
+    :param Gxx: resultant matrix of single-sided spectral densities [N x Nfft] [V^2/Hz]
     '''
 
     N = (fs**-1*df)**-1
     t = np.arange(len(xn)) * fs**-1
-    f ,Gxx,Gxx_avg = msPSD(xn,fs,df =df,ovr = ovr,save_fig=0,win = win,plot = False,levels = [0,100])
+    f ,Gxx,Gxx_avg = msPSD(xn,fs,df =df,ovr = ovr,save_fig=0,win = win,plot = False)
     t = t[int(N / 2):-int(N / 2)][::int((1 - ovr) * N)]
 
     if plot is True:
         for i in range(np.shape(Gxx)[2]):
-
             levels = np.arange(levels[0], levels[1], 5)
+            plt.figure()
             fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
             spec = ax.contourf(t, f, 10 * np.log10(np.squeeze(Gxx[:,:-1,i])*df / 20e-6 ** 2), cmap='hot', levels=levels)
             ax.set_ylabel('Frequency (Hz)')
             ax.set_xlabel('Time (sec)')
             ax.set_xlim([t[0], t[-1]])
-            ax.set_ylim([0, 10000])
+            ax.set_ylim(f_lim[0], f_lim[1])
             cbar = fig.colorbar(spec)
-            cbar.set_label('SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+            cbar.set_label('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
 
             if save_fig is True:
-                plt.savefig(os.path.join(save_path, 'spectrogram_m' + str(i + 1) + '.png'))
-                plt.close()
+                fig.savefig(os.path.join(save_path, 'spectrogram_m' + str(i + 1) + '.png'))
+                fig.close()
 
     return t, f, np.transpose(Gxx)
