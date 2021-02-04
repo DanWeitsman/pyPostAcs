@@ -13,26 +13,31 @@ plt.rc('text',**{'usetex':False})
 plt.rc('lines',**{'linewidth':2})
 
 #%%
-dir ='/Users/danielweitsman/OneDrive - The Pennsylvania State University/January2021TestCampaign/PhasedArrayCalibration/22Jan2021'
-caseName  = ['Sweep_Cal2']
+f1 = lambda a: fun.msPSD(a['Acoustic Data'][:].transpose()/(a['Sensitivities'][:]*1e-3), fs =  a['Sampling Rate'][()], df = 5, win= True, ovr = 0.5, plot = False,save_fig=False,f_lim =[10,10e3],levels = [0, 80])
+
+dir ='/Users/danielweitsman/OneDrive - The Pennsylvania State University/January2021TestCampaign/Runs/2_1_21'
+caseName  = ['fb15','fb16']
+leglab = ['1','2']
 
 mic = 5
 df = 5
 
 fig,ax = plt.subplots(1,1,figsize = (6.4,4.5))
-
+plt.subplots_adjust(bottom = 0.15)
 for i,case in enumerate(caseName):
-
     with h5py.File(os.path.join(dir,caseName[i], 'acs_data.h5'), 'r') as dat_file:
-        data = dat_file['Acoustic Data (mV)'][:].transpose() / dat_file['Sensitivities (mV_Pa)']
+        data = (dat_file['Acoustic Data'][:].transpose()/(dat_file['Sensitivities'][:]*1e-3))
+        f,Gxx,Gxx_avg = fun.msPSD(data[:,int(mic-1)], dat_file['Sampling Rate'][()], df=df, ovr=0.5,plot = False,save_fig = False)
+        ax.plot(f,10*np.log10(Gxx_avg*df/20e-6**2),label = case)
 
-        f, Gxx = fun.msPSD(data[:,mic], dat_file.attrs['Sampling Rate (Hz)'], df=df, win='hann', ovr=0.5)
-        ax.plot(f,10*np.log10(Gxx/20e-6**2),label = caseName[i])
+ax.set_xscale('log')
+ax.set_xlabel('Frequency (Hz)')
+ax.set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+ax.grid('on')
 
-    ax.set_xscale('log')
-    # ax.axis([10,10e3,-20,100])
-    ax.set_xlabel('Frequency [Hz]')
-    ax.set_ylabel('$PSD \:dB\: (re:\: 20 \:\mu Pa/Hz)$')
+if isinstance(leglab, list):
+    ax.legend(leglab)
+else:
     ax.legend()
-    ax.grid()
-    ax.set_title('Mic ' + str(mic))
+
+ax.set_title('Mic: ' + str(mic))

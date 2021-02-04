@@ -65,6 +65,36 @@ def hann(N, fs):
     W = hann / np.sqrt(1 / N * np.sum(hann ** 2))
     return W
 
+def tseries(xn, fs,t_lim = [0,1], levels = [-0.5,0.5],save_fig = True, save_path = ''):
+    '''
+    This function generates a figure of the pressure time history
+    :param xn: time series [Pa]
+    :param fs: sampling frequency [Hz]
+    :param t_lim: extents of time axis, supplied as a list [s]
+    :param levels: limits of vertical axis, supplied as a list [Pa]
+    :param save_fig: set to true to save the figure
+    :param save_path: path where to save the figure
+    :param plot: set to true in order to generate the time series plot
+    :return:
+    '''
+
+    t = np.arange(len(xn))*fs**-1
+    for i in range(np.shape(xn)[1]):
+        fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        plt.subplots_adjust(bottom=0.15)
+        ax.plot(t[int(fs*t_lim[0]):int(fs*t_lim[1])], xn[int(fs*t_lim[0]):int(fs*t_lim[1]),i])
+        ax.axis([t_lim[0],t_lim[1],levels[0],levels[1]])
+        ax.set_xlabel('Time (sec)')
+        ax.set_ylabel('$x_n [Pa]$')
+        ax.grid()
+        ax.set_title('Mic: '+str(i+1))
+
+        if save_fig is True:
+            plt.savefig(os.path.join(save_path,'tseries_'+str(i+1)+'.png'),format='png')
+            plt.close()
+
+
+
 def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100],save_fig = True, save_path = '',plot = True):
     '''
     This function computes the single and double sided mean-square averaged PSD for a given time series
@@ -118,6 +148,7 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
     if plot is True:
         for i in range(np.shape(Gxx_avg)[1]):
             fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+            plt.subplots_adjust(bottom=0.15)
             ax.plot(f, 10 * np.log10(Gxx_avg[:,i]*df / 20e-6 ** 2))
             ax.set_xscale('log')
             ax.axis([f_lim[0],f_lim[1],levels[0],levels[1]])
@@ -127,13 +158,13 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
             ax.set_title('Mic: '+str(i+1))
 
             if save_fig is True:
-                plt.savefig(os.path.join(save_path,'spectra_m'+str(i+1)+'.png'))
+                plt.savefig(os.path.join(save_path,'spectra_m'+str(i+1)+'.png'),format='png')
                 plt.close()
 
     return f,Gxx,Gxx_avg
 
 
-def spectrogram(xn, fs, df, win = True, ovr= 0, f_lim = [0,10e3],levels = [0,100],save_fig = True, save_path = '' ,plot = True):
+def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],levels = [0,100],save_fig = True, save_path = '' ,plot = True):
     '''
     This function computes the spectrogram of a given time series
     :param xn: time array
@@ -153,20 +184,24 @@ def spectrogram(xn, fs, df, win = True, ovr= 0, f_lim = [0,10e3],levels = [0,100
     t = t[int(N / 2):-int(N / 2)][::int((1 - ovr) * N)]
 
     if plot is True:
+        levels = np.arange(levels[0], levels[1], 5)
         for i in range(np.shape(Gxx)[2]):
-            levels = np.arange(levels[0], levels[1], 5)
-            plt.figure()
             fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
+            plt.subplots_adjust(bottom=0.15)
             spec = ax.contourf(t, f, 10 * np.log10(np.squeeze(Gxx[:,:-1,i])*df / 20e-6 ** 2), cmap='hot', levels=levels)
             ax.set_ylabel('Frequency (Hz)')
             ax.set_xlabel('Time (sec)')
-            ax.set_xlim([t[0], t[-1]])
+            if t_lim is list:
+                ax.set_xlim([t_lim[0], t_lim[-1]])
+            else:
+                ax.set_xlim([t[0], t[-1]])
             ax.set_ylim(f_lim[0], f_lim[1])
+            ax.set_title('Mic: '+str(i+1))
             cbar = fig.colorbar(spec)
             cbar.set_label('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
 
             if save_fig is True:
-                fig.savefig(os.path.join(save_path, 'spectrogram_m' + str(i + 1) + '.png'))
-                fig.close()
+                plt.savefig(os.path.join(save_path, 'spectrogram_m' + str(i + 1) + '.png'),format='png')
+                plt.close()
 
     return t, f, np.transpose(Gxx)
