@@ -16,10 +16,10 @@ plt.rc('lines',**{'linewidth':2})
 f1 = lambda a: fun.msPSD(a['Acoustic Data'][:].transpose()/(a['Sensitivities'][:]*1e-3), fs =  a['Sampling Rate'][()], df = 5, win= True, ovr = 0.5, plot = False,save_fig=False,f_lim =[10,10e3],levels = [0, 80])
 
 dir ='/Users/danielweitsman/OneDrive - The Pennsylvania State University/January2021TestCampaign/Runs/2_1_21'
-caseName  = ['fb15','fb16']
-leglab = ['1','2']
+caseName  = ['fb38','fb61','fb72']
+leglab = ''
 
-mic = 5
+mic =1
 df = 5
 
 fig,ax = plt.subplots(1,1,figsize = (6.4,4.5))

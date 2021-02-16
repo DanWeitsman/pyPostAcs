@@ -9,6 +9,7 @@ import numpy as np
 from scipy.fft import fft
 import matplotlib.pyplot as plt
 import h5py
+import re
 
 #%%
 fontName = 'Times New Roman'
@@ -20,7 +21,7 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 
-def apply_fun_to_h5(dir, function):
+def apply_fun_to_h5(dir, function, append_perf = False):
 
     '''
     This function finds all the acs_data.h5 files contained in a directory and all of its subdirectories and applies
@@ -28,6 +29,8 @@ def apply_fun_to_h5(dir, function):
     :param dir: The parent directory within which to search for the acs_data.h5 files
     to search for the h5
     :param function: A list of functions which to run on each of the detected acs_data.h5 files.
+    :param append_perf: Boolean (true/false) if you want to write the load contained in full.txt to the h5 file.
+
     :return:
     '''
 
@@ -37,7 +40,7 @@ def apply_fun_to_h5(dir, function):
     #   Loops through each subfolder in a directory until arriving at the base folder
     for item in os.listdir(dir):
         if os.path.isdir(os.path.join(dir, item)):
-            apply_fun_to_h5(os.path.join(dir, item), function)
+            apply_fun_to_h5(os.path.join(dir, item), function, append_perf)
 
     #   Checks whether the acs_data.h5 exists in current directory
     if os.path.exists(os.path.join(dir, 'acs_data.h5')):
@@ -46,11 +49,46 @@ def apply_fun_to_h5(dir, function):
         if os.path.exists(os.path.join(dir, 'Figures')) is False:
             os.mkdir(os.path.join(dir, 'Figures'))
     #   Opens the acs_data.h5 file and executes all the specified functions
-        with h5py.File(os.path.join(dir, 'acs_data.h5'),'r') as dat_file:
+        with h5py.File(os.path.join(dir, 'acs_data.h5'),'r+') as dat_file:
+            if append_perf is True:
+                append_perf_dat(dat_file, dir)
             for f in function:
                 f(dat_file,os.path.join(dir, 'Figures'))
+
     else:
         print('h5 file does not exist in ' + dir)
+        # uncomment the following lines if a case was run without acquiring acoustic data (acs_data.h5 does not exist in folder)
+        # with h5py.File(os.path.join(dir, 'acs_data.h5'),'a') as dat_file:
+        #     if append_perf is True:
+        #         append_perf_dat(dat_file,dir)
+
+
+
+def append_perf_dat(dat_file, dir,col = 27):
+    '''
+    This function appends the performance and all the other data contained in Full.txt, which is exported by default
+    from the LabVIEW data acquisition vi (UAV Control V4.vi) to the acs_data.h5 file.
+    :param dat_file: opened acs_dat.h5 file to which to append the performance data
+    :param b: prefix to the path containing the Full.txt file
+    :param col: number of columns in the Full.txt file
+    :return:
+    '''
+
+    #   opens and reads contents of Full.txt file. Any slashes ('/') are replaced with underscores since dataset names cannot contain '/'.
+    with open(os.path.join(dir, 'Full.txt'), 'r') as f_txt:
+        data = f_txt.read().replace('/','_')
+    #   splits the Full.txt file with \t and \n as delimiters
+    data_split = re.split('\t|\n', data)
+    #   reshapes a single-dimensional list into the right dimensional array
+    data_split = np.reshape(data_split[:-1], (int(len(data_split[:-1]) / col), col))
+    #   extracts header of each data set in Full.txt
+    header = data_split[0]
+    #   changes numerical data from type str to float64
+    data_split = data_split[1:].astype(float)
+    #   loops through each dataset contained in Full.txt
+    for i, dat in enumerate(data_split.transpose()):
+        #   writes data to a new dataset titled with each header
+        dat_file.create_dataset(header[i], data=dat, shape=np.shape(dat))
 
 def hann(N, fs):
     '''
@@ -92,7 +130,6 @@ def tseries(xn, fs,t_lim = [0,1], levels = [-0.5,0.5],save_fig = True, save_path
         if save_fig is True:
             plt.savefig(os.path.join(save_path,'tseries_'+str(i+1)+'.png'),format='png')
             plt.close()
-
 
 
 def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100],save_fig = True, save_path = '',plot = True):
