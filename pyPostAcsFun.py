@@ -117,6 +117,9 @@ def tseries(xn, fs,t_lim = [0,1], levels = [-0.5,0.5],save_fig = True, save_path
     '''
 
     t = np.arange(len(xn))*fs**-1
+    if np.shape(xn) == (len(xn),1):
+        xn = np.expand_dims(xn,axis = 1)
+
     for i in range(np.shape(xn)[1]):
         fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
         plt.subplots_adjust(bottom=0.15)
@@ -228,10 +231,12 @@ def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],leve
             spec = ax.contourf(t, f, 10 * np.log10(np.squeeze(Gxx[:,:-1,i])*df / 20e-6 ** 2), cmap='hot', levels=levels)
             ax.set_ylabel('Frequency (Hz)')
             ax.set_xlabel('Time (sec)')
+
             if t_lim is list:
                 ax.set_xlim([t_lim[0], t_lim[-1]])
             else:
                 ax.set_xlim([t[0], t[-1]])
+
             ax.set_ylim(f_lim[0], f_lim[1])
             ax.set_title('Mic: '+str(i+1))
             cbar = fig.colorbar(spec)
