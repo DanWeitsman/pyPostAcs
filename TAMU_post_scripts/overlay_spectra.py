@@ -20,22 +20,24 @@ dir ='/Users/danielweitsman/Box/Jan21Test/TAMU/runs/'
 
 # Names of the sub folders that correspond to the cases you want to compare. If the case folder is in another
 # subfolder the relative path from the parent directory ('dir') can be included in each of the folders of CaseName
-caseName  = ['bg/bg14','cshb/cshb21','cghb/cghb21']
+caseName  = ['bg/bg14','mn/mn6','cshb/cshb18','cghb/cghb20']
 
+#   set equal to True in order to save the figure as an eps
+save = False
 #   Legend labels, if set equal to '', the contents of CaseName would be used to generate the legend.
-leglab = ['Background','Straight','GoFly']
+leglab = ['Background','Motor Noise','Straight','GoFly']
 # leglab=''
 
 #   Linestyle for each case
-linestyle =['-.','--','-']
+linestyle =['-','-.','--','-']
 
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
-mics = [2,5,9]
+mics = [1,5,9]
 
 #   Frequency resolution of spectra [Hz]
-df = 1
+df = 5
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
-axis_lim = [10, 5e3, 0, 85]
+axis_lim = [30, 5e3, 0, 85]
 
 #   Starting time from which to compute the spectra
 start_t = 10
@@ -97,3 +99,7 @@ else:
     else:
         ax.legend(loc='center',ncol = len(caseName), bbox_to_anchor=(.5, -.175))
 
+if save:
+    if not os.path.exists(os.path.join(os.path.dirname(dir), 'Figures')):
+        os.mkdir(os.path.join(os.path.dirname(dir), 'Figures'))
+    plt.savefig(os.path.join(dir, 'Figures', 'hover_spectra.eps'), format='eps')
