@@ -6,10 +6,12 @@ By Daniel Weitsman
 
 import os
 import numpy as np
-from scipy.fft import fft
+from scipy.fft import fft,ifft
+from scipy.signal import lfilter, filtfilt
 import matplotlib.pyplot as plt
 import h5py
 import re
+from bisect import bisect
 
 #%%
 fontName = 'Times New Roman'
@@ -135,6 +137,32 @@ def tseries(xn, fs,t_lim = [0,1], levels = [-0.5,0.5],save_fig = True, save_path
             plt.close()
 
 
+def PSD(xn, fs):
+    '''
+    This function computes the single and double sided PSD from a given time series
+    :param xn: time series
+    :param fs: sampling frequency [Hz]
+    :return:
+    :param f: frequency vector [Hz]
+    :param Sxx: double-sided spectral density [WU^2/Hz]
+    :param Gxx: single-sided spectral densities [WU^2/Hz]
+    '''
+
+    dt = fs**-1
+    df = (len(xn)*dt)**-1
+
+    #   Frequency vector
+    f = np.arange(int(len(xn) /2)) * df
+    #   Computes the linear spectrum
+    Xm = fft(xn) * dt
+    #   Computes double-sided PSD
+    Sxx = 1/(len(xn)*dt) * np.conj(Xm) * Xm
+    #   Computes single-sided PSD
+    Gxx = Sxx[:int(len(xn) / 2)]
+    Gxx[1:-1] = 2 * Gxx[1:-1]
+
+    return f, Xm, Sxx, Gxx
+
 def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100],save_fig = True, save_path = '',plot = True):
     '''
     This function computes the single and double sided mean-square averaged PSD for a given time series
@@ -224,7 +252,7 @@ def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],leve
     t = t[int(N / 2):-int(N / 2)][::int((1 - ovr) * N)]
 
     if plot is True:
-        levels = np.arange(levels[0], levels[1], 5)
+        # levels = np.arange(levels[0], levels[1], 2)
         for i in range(np.shape(Gxx)[2]):
             fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
             plt.subplots_adjust(bottom=0.15)
@@ -232,18 +260,138 @@ def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],leve
             ax.set_ylabel('Frequency (Hz)')
             ax.set_xlabel('Time (sec)')
 
-            if t_lim is list:
+
+            if isinstance(t_lim, list):
                 ax.set_xlim([t_lim[0], t_lim[-1]])
             else:
                 ax.set_xlim([t[0], t[-1]])
 
             ax.set_ylim(f_lim[0], f_lim[1])
-            ax.set_title('Mic: '+str(i+1))
+            # ax.set_title('Mic: '+str(i+1))
             cbar = fig.colorbar(spec)
+            cbar.set_ticks(np.arange(levels[0],levels[-1]+1,5))
+            cbar.set_ticklabels(np.arange(levels[0],levels[-1]+1,5))
+
             cbar.set_label('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+
 
             if save_fig is True:
                 plt.savefig(os.path.join(save_path, 'spectrogram_m' + str(i + 1) + '.png'),format='png')
                 plt.close()
 
     return t, f, np.transpose(Gxx)
+
+def filt_response(bb,aa,fs,N,plot=True):
+    '''
+    This function returns the frequency response of a moving average filter by computing the linear spectrum of the impulse response.
+    :param bb: output (numerator) coefficients of the frequency response, multiplied by dt
+    :param aa: input (denominator) coefficients of the frequency response
+    :param fs: sampling frequency [Hz]
+    :param N: length of the impulse time series [points]
+    :return:
+    :param f: frequency vector [Hz]
+    :param y: impulse time series
+    :param h: frequency response
+    :param phase: phase [deg]
+
+    '''
+    impulse = np.zeros(int(N))
+    impulse[0] = fs
+    y = lfilter(bb, aa, impulse)
+    h = (fft(y)*fs**-1)[:int(N/2)]
+    phase = np.angle(h) * 180 / np.pi
+    f = np.arange(N/2)*(N*fs**-1)**-1
+
+    if plot:
+        fig, ax = plt.subplots(2, 1, figsize=(6.4, 4.5))
+        ax[0].plot(f, abs(h))
+        ax[0].set_ylabel('Magnitude')
+        ax[0].tick_params(axis='x', labelsize=0)
+        ax[0].grid()
+        ax[0].set_xscale('log')
+        ax[0].set_xlim(10, 5e3)
+
+        ax[1].plot(f, phase)
+        ax[1].set_ylabel('Phase [$\circ$]')
+        ax[1].set_xlabel('Frequency [Hz]')
+        ax[1].grid()
+        ax[1].set_xscale('log')
+        ax[1].set_xlim(10, 5e3)
+
+    return f,y,h,phase
+
+def xCorr(xn, yn, xfs, yfs):
+    '''
+    This function computes the circular cross correlation between two time series in the frequency domain. If a
+    simple cross correlation is required, zero-pad both time series doubling their lengths.
+    :param xn: first time series
+    :param yn: second time series
+    :param xfs: sampling rate of first time series
+    :param yfs: sampling rate of second time series
+    :return:
+    :param Rxy: cross correlation (simple if the time series are zero padded)
+    '''
+
+    # assert len(xn) * xfs ** -1 == len(yn) * yfs ** -1, 'Ensure that the record lengths of both time series are equal'
+    dt = 1 / xfs
+    f, Xm, Sxx, Gxx = PSD(xn, xfs)
+    f, Ym, Syy, Gyy = PSD(yn, yfs)
+    Sxy = 1 / (len(xn) * dt) * np.conj(Xm) * Ym
+    Rxy = ifft(Sxy) * 1 / dt
+    return Rxy
+
+
+def hilbert(xn,fs):
+    '''
+    This function applies the hilbert transform to a given time series and returns the envelope and instantaneous phase and frequency.
+    :param xn: time series
+    :param fs: sampling frequency [Hz]
+    :return:
+    :param envelope: envelope of the time series
+    :param phi: instantaneous phase [degrees]
+    :param f: instantaneous frequency
+
+    '''
+
+    #   temporal resolution
+    dt = fs**-1
+    #   computes linear spectrum
+    Xm = fft(xn) * dt
+
+    #   generates window of the Hilbert transform
+    W_hilbert = np.concatenate((np.ones(int(len(xn) / 2)) * 2, np.zeros(int(len(xn) / 2))), axis=0)
+    W_hilbert[0] = 1
+    W_hilbert[int(len(xn) / 2)] = 1
+
+    # computes the inverse fft of the product between the linear spectrum and the Hilbert transform window (
+    # equivalent to a time shift in the time domain)
+    zh = ifft(Xm * W_hilbert) * dt ** -1
+
+    envelope = abs(zh)
+    phi = np.unwrap(np.angle(zh))
+    f = 1 / (2 * np.pi) * np.diff(phi) * 1 / dt
+
+    return f,phi,envelope
+
+def rpm_eval(ttl,fs,start_t,end_t):
+    '''
+    This function evaluates the average rotational rate for a segment of data based on the tac pulse signal.
+    :param ttl: raw tac time series
+    :param fs: sampling rate of the tac signal [Hz]
+    :param start_t: start time of the segment under consideration [s]
+    :param end_t: end time of the segment under consideration [s]
+    :return:
+    '''
+
+    # identifies the indices corresponding to the leading edge of each pulse
+    LE_ind = np.squeeze(np.where(np.diff(ttl) == 1))
+    # returns a list containing the starting and ending index
+    lim_ind = list(map(lambda x: bisect(LE_ind, x),[start_t * fs,end_t * fs]))
+    # computes the rotational rate over the time interval
+    rpm = (np.diff(LE_ind[lim_ind[0]:lim_ind[1]]) / fs / 60) ** -1
+    # averages the rpm
+    rpm_nom = np.mean(rpm)
+    # confidence interval of the the rpm (95% level of certainty)
+    u_rpm = 1.94*np.std(rpm)/np.sqrt(len(LE_ind)-1)
+
+    return LE_ind, lim_ind, rpm_nom, u_rpm

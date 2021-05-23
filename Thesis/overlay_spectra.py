@@ -16,20 +16,22 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   Parent directory where all of the data files are contained.
-dir ='/Users/danielweitsman/Box/Jan21Test/TAMU/runs/'
+dir ='/Users/danielweitsman/Downloads/'
 
 # Names of the sub folders that correspond to the cases you want to compare. If the case folder is in another
 # subfolder the relative path from the parent directory ('dir') can be included in each of the folders of CaseName
-caseName  = ['bg/bg14','mn/mn6','cshb/cshb18','cghb/cghb20']
+caseName  = ['RUN300','ddhcs7']
 
 #   set equal to True in order to save the figure as an eps
 save = False
+#  file name
+savef_name = 'ushb8_vs_cshb10'
 #   Legend labels, if set equal to '', the contents of CaseName would be used to generate the legend.
-leglab = ['Background','Motor Noise','Straight','GoFly']
+leglab = ['Stacked','Separated']
 # leglab=''
 
 #   Linestyle for each case
-linestyle =['-','-.','--','-']
+linestyle =['-.','-',':','-',':']
 
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
 mics = [1,5,9]
@@ -37,7 +39,7 @@ mics = [1,5,9]
 #   Frequency resolution of spectra [Hz]
 df = 5
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
-axis_lim = [30, 5e3, 0, 85]
+axis_lim = [30, 5e3, 20, 75]
 
 #   Starting time from which to compute the spectra
 start_t = 10
@@ -45,7 +47,6 @@ start_t = 10
 end_t = 15
 
 
-#%%
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
 #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
@@ -56,6 +57,9 @@ for i,case in enumerate(caseName):
 #   Opens and reads in the acoustic data in the h5 file
     with h5py.File(os.path.join(dir,case, 'acs_data.h5'), 'r') as dat_file:
         data = (dat_file['Acoustic Data'][:].transpose()/(dat_file['Sensitivities'][:]*1e-3))[int(start_t*dat_file['Sampling Rate'][()]):int(end_t*dat_file['Sampling Rate'][()])]
+        print(10*np.log10(np.mean(data[:]**2,axis = 0)/20e-3**2))
+        # print(np.mean(['Thrust'][int(start_t*5e3):int(end_t*5e3)]))
+        # print(np.mean(['Torque'][int(start_t * 5e3):int(end_t * 5e3)]))
 #   Loops through each mic
         for ii,m in enumerate(mics):
 #   Computes the mean-square PSD spectra for each mic
@@ -73,7 +77,7 @@ if len(mics)>1:
         if ii!=len(mics)-1:
             ax[ii].tick_params(axis='x', labelsize=0)
         ax[ii].set_xscale('log')
-        ax[ii].set_yticks(np.arange(0,axis_lim[-1],20))
+        ax[ii].set_yticks(np.arange(axis_lim[2], axis_lim[-1]+1, 20))
         ax[ii].axis(axis_lim)
         ax[ii].grid('on')
 
@@ -90,7 +94,7 @@ else:
     ax.set_title('Mic: ' + str(mics[0]))
     ax.set_xscale('log')
     ax.axis(axis_lim)
-    ax.set_yticks(np.arange(0, axis_lim[-1], 20))
+    ax.set_yticks(np.arange(axis_lim[2], axis_lim[-1], 10))
     ax.set_xlabel('Frequency (Hz)')
     ax.set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
     ax.grid('on')
@@ -103,4 +107,6 @@ else:
 if save:
     if not os.path.exists(os.path.join(os.path.dirname(dir), 'Figures')):
         os.mkdir(os.path.join(os.path.dirname(dir), 'Figures'))
-    plt.savefig(os.path.join(dir, 'Figures', 'hover_spectra.eps'), format='eps')
+    plt.savefig(os.path.join(dir, 'Figures', savef_name+'.eps'), format='eps')
+    plt.savefig(os.path.join(dir, 'Figures', savef_name+'.png'), format='png')
+

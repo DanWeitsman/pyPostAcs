@@ -16,20 +16,20 @@ plt.rc('lines', **{'linewidth': 2})
 # %%
 
 # path to directory containing the rpm sweep cases
-dir = '/Users/danielweitsman/Box/Jan21Test/TAMU/runs/cgeb'
+dir = '/Users/danielweitsman/Box/Jan21Test/TAMU/runs/rpm_sweeps'
 
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.
-caseName = ['cgeb34']
+caseName = ['ushb/ushb8','cshb/cshb10']
 
 # Set equal to "True" in order to plot the thrust/torque/rpm time series for each run. These plots are not saved but are
 # useful for determining the averaging interval to use for the thrust/torque profiles.
-plot_tseries = True
-
+plot_tseries = False
+save_h5 = False
 #   Start time of averaging interval (s)
-t_min = 0
+t_min = 10
 #   End time of averaging interval (s)
-t_max = 30
+t_max = 15
 
 # %%
 # def filt_response(bb,aa,fs,N):
@@ -77,7 +77,8 @@ t_max = 30
 # %%
 #   Determines which cases to use for the thrust/torque profiles
 if caseName == []:
-    # cases = os.listdir(dir) This line of code rearranges the order of the cases so that they are increasing
+    # cases = os.listdir(dir)
+    # This line of code rearranges the order of the cases so that they are increasing
     # numerically, however it only applies to the TAMU data. Comment this line and uncomment the previous line if you
     # are working with an alternate dataset.
     cases = [os.path.basename(dir) + str(x) for x in sorted([int(x[4:]) for x in os.listdir(dir)])]
@@ -255,19 +256,19 @@ ax.grid()
 plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'Q_profile.png'), format='png')
 
 # %%
-
+if save_h5:
 # Saves the data to a new h5 file, which could later be referenced tp compare the thrust/torque profiles of different
 # rotor configurations.
 
-load_dat = {'rpm_avg_2': rpm_avg_2, 'T_avg_2': T_avg_2,
-            'T_err_2': T_err_2, 'Q_avg_2': Q_avg_2, 'Q_err_2': Q_err_2,
-            'rpm_avg_1': rpm_avg_1, 'T_avg_1': T_avg_1,
-            'T_err_1': T_err_1, 'Q_avg_1': Q_avg_1, 'Q_err_1': Q_err_1, 'T_tot': T_tot, 'T_tot_err': T_tot_err,
-            'Q_tot': Q_tot, 'Q_tot_err': Q_tot_err}
+    load_dat = {'rpm_avg_2': rpm_avg_2, 'T_avg_2': T_avg_2,
+                'T_err_2': T_err_2, 'Q_avg_2': Q_avg_2, 'Q_err_2': Q_err_2,
+                'rpm_avg_1': rpm_avg_1, 'T_avg_1': T_avg_1,
+                'T_err_1': T_err_1, 'Q_avg_1': Q_avg_1, 'Q_err_1': Q_err_1, 'T_tot': T_tot, 'T_tot_err': T_tot_err,
+                'Q_tot': Q_tot, 'Q_tot_err': Q_tot_err}
 
-if os.path.exists(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5')):
-    os.remove(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5'))
+    if os.path.exists(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5')):
+        os.remove(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5'))
 
-with h5py.File(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5'), 'a') as f:
-    for k, dat in load_dat.items():
-        f.create_dataset(k, shape=np.shape(dat), data=dat)
+    with h5py.File(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5'), 'a') as f:
+        for k, dat in load_dat.items():
+            f.create_dataset(k, shape=np.shape(dat), data=dat)
