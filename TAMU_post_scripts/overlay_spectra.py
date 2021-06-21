@@ -16,20 +16,20 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   Parent directory where all of the data files are contained.
-dir ='/Users/danielweitsman/Box/Jan21Test/TAMU/runs/'
+dir ='/Users/danielweitsman/Box/May21Test/rpm_sweep/'
 
 # Names of the sub folders that correspond to the cases you want to compare. If the case folder is in another
 # subfolder the relative path from the parent directory ('dir') can be included in each of the folders of CaseName
-caseName  = ['bg/bg14','mn/mn6','cshb/cshb18','cghb/cghb20']
+caseName  = ['cshb/cshb3','cvhb/cvhb3']
 
 #   set equal to True in order to save the figure as an eps
 save = False
 #   Legend labels, if set equal to '', the contents of CaseName would be used to generate the legend.
-leglab = ['Background','Motor Noise','Straight','GoFly']
+leglab = ['Straight','High Solidity']
 # leglab=''
 
 #   Linestyle for each case
-linestyle =['-','-.','--','-']
+linestyle =['-.','-','--','-']
 
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
 mics = [1,5,9]
@@ -37,7 +37,7 @@ mics = [1,5,9]
 #   Frequency resolution of spectra [Hz]
 df = 5
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
-axis_lim = [30, 5e3, 0, 85]
+axis_lim = [50, 3e3, 20,65]
 
 #   Starting time from which to compute the spectra
 start_t = 10
@@ -72,7 +72,7 @@ if len(mics)>1:
         ax[ii].set_title('Mic: '+str(m))
         if ii!=len(mics)-1:
             ax[ii].tick_params(axis='x', labelsize=0)
-        ax[ii].set_xscale('log')
+        # ax[ii].set_xscale('log')
         ax[ii].set_yticks(np.arange(0,axis_lim[-1],20))
         ax[ii].axis(axis_lim)
         ax[ii].grid('on')
@@ -88,7 +88,7 @@ if len(mics)>1:
 #   Configures axes, plot, and legend if only a single mic is plotted
 else:
     ax.set_title('Mic: ' + str(mics[0]))
-    ax.set_xscale('log')
+    # ax.set_xscale('log')
     ax.axis(axis_lim)
     ax.set_yticks(np.arange(0, axis_lim[-1], 20))
     ax.set_xlabel('Frequency (Hz)')

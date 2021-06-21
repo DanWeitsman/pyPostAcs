@@ -110,14 +110,14 @@ def harm_extract(xn, tac_ind, fs,rev_skip,harm_filt):
 
 #%%
 #   Directory of data files.
-dir ='/Users/danielweitsman/Box/Jan21Test/TAMU/runs/rpm_sweeps/cshb/cshb14'
+dir ='/Users/danielweitsman/Downloads/NASA_data/ddhcs10'
 
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
 mics = [1,5,9]
 #   Frequency resolution of spectra [Hz]
 df = 5
 # min and max shaft order harmonics to exclude from the analysis (set max to -1 to include all upper order harmonics)
-harm_filt = [4, -1]
+harm_filt = [3, 8]
 #   Spectra axis limits specified as: [xmin,xmax,ymin,ymax]
 spec_ax_lim = [100, 2.5e3, 0, 85]
 #   Time series yaxis limits specified as (xlim set automatically to range from 0-1): [ymin,ymax]

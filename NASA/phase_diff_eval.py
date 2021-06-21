@@ -16,12 +16,12 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   Directory of data files.
-dir ='/Users/danielweitsman/Box/Jan21Test/TAMU/runs/rpm_sweeps/cshb/cshb14'
+dir ='/Users/danielweitsman/Downloads/NASA_data/ddhcs10'
 
 #   Starting time from which to compute the spectra
-start_t = 10
+start_t = 1
 #   End time to which to compute the spectra
-end_t = 15
+end_t = 29
 
 #%%
 #   Opens and reads in the acoustic and TAC data from the h5 files

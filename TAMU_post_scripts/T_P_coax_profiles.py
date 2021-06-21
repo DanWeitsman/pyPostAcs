@@ -16,16 +16,16 @@ plt.rc('lines', **{'linewidth': 2})
 # %%
 
 # path to directory containing the rpm sweep cases
-dir = '/Users/danielweitsman/Box/Jan21Test/TAMU/runs/rpm_sweeps'
+dir = '/Users/danielweitsman/Box/May21Test/rpm_sweep/cshb'
 
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.
-caseName = ['ushb/ushb8','cshb/cshb10']
+caseName = []
 
 # Set equal to "True" in order to plot the thrust/torque/rpm time series for each run. These plots are not saved but are
 # useful for determining the averaging interval to use for the thrust/torque profiles.
-plot_tseries = False
-save_h5 = False
+plot_tseries = True
+save_h5 = True
 #   Start time of averaging interval (s)
 t_min = 10
 #   End time of averaging interval (s)
@@ -220,6 +220,8 @@ T_tot = T_avg_2 + T1_fit(rpm_avg_2)
 T_tot_err = np.sqrt(T_err_2 ** 2 + T_err_1 ** 2)
 Q_tot = Q_avg_2 + Q1_fit(rpm_avg_2)
 Q_tot_err = np.sqrt(Q_err_2 ** 2 + Q_err_1 ** 2)
+#%%
+
 #   initializes figures
 fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
 ax.set_title(os.path.basename(dir))
@@ -230,8 +232,8 @@ ax.errorbar(rpm_avg_2, T_tot, yerr=T_tot_err, fmt='-o')
 
 ax.set_ylabel('Thrust, T (N)')
 ax.set_xlabel('RPM')
-ax.set_xlim([1000, 5250])
-ax.set_ylim([0, 70])
+# ax.set_xlim([1000, 5250])
+# ax.set_ylim([0, 70])
 ax.legend(['Lower Rotor', 'Upper Rotor', 'Total'])
 ax.grid()
 
@@ -248,8 +250,8 @@ ax.errorbar(rpm_avg_2, Q_tot, yerr=Q_tot_err, fmt='-o')
 
 ax.set_ylabel('Torque, Q (Nm)')
 ax.set_xlabel('RPM')
-ax.set_xlim([1000, 5250])
-ax.set_ylim([-1.5, 1.5])
+# ax.set_xlim([1000, 5250])
+# ax.set_ylim([-1.5, 1.5])
 ax.legend(['Lower Rotor', 'Upper Rotor', 'Total'])
 ax.grid()
 
