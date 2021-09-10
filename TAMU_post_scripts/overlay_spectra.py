@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 #%% Sets font parameters
 
 fontName = 'Times New Roman'
-fontSize = 12
+fontSize = 22
 plt.rc('font',**{'family':'serif','serif':[fontName],'size':fontSize})
 plt.rc('mathtext',**{'default':'regular'})
 plt.rc('text',**{'usetex':False})
@@ -16,16 +16,15 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   Parent directory where all of the data files are contained.
-dir ='/Users/danielweitsman/Box/May21Test/rpm_sweep/'
+dir ='/Users/danielweitsman/Box/Jan21Test/TAMU/runs/'
 
 # Names of the sub folders that correspond to the cases you want to compare. If the case folder is in another
 # subfolder the relative path from the parent directory ('dir') can be included in each of the folders of CaseName
-caseName  = ['cshb/cshb3','cvhb/cvhb3']
-
+caseName  = ['bg/bg11','mn/mn8','rpm_sweeps/cseb/cseb19','rpm_sweeps/cgeb/cgeb32']
 #   set equal to True in order to save the figure as an eps
 save = False
 #   Legend labels, if set equal to '', the contents of CaseName would be used to generate the legend.
-leglab = ['Straight','High Solidity']
+leglab = ['Background','Motor','Straight','Double-swept']
 # leglab=''
 
 #   Linestyle for each case
@@ -35,9 +34,9 @@ linestyle =['-.','-','--','-']
 mics = [1,5,9]
 
 #   Frequency resolution of spectra [Hz]
-df = 5
+df = 1
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
-axis_lim = [50, 3e3, 20,65]
+axis_lim = [100, 2e3, 0,85]
 
 #   Starting time from which to compute the spectra
 start_t = 10
@@ -49,7 +48,7 @@ end_t = 15
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
 #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
-plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
+plt.subplots_adjust(hspace = 0.42,bottom = 0.19)
 
 #   Loops through the cases
 for i,case in enumerate(caseName):
@@ -81,9 +80,9 @@ if len(mics)>1:
     ax[int((len(mics) - 1)/2)].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
 
     if isinstance(leglab, list):
-        ax[len(mics) - 1].legend(leglab,loc='center',ncol = len(caseName), bbox_to_anchor=(.5, -.625))
+        ax[len(mics) - 1].legend(leglab,loc='center',ncol = len(caseName), bbox_to_anchor=(.485, -.9),columnspacing = .3,handletextpad = .1)
     else:
-        ax[len(mics) - 1].legend(loc='center',ncol = len(caseName), bbox_to_anchor=(.5, -.625))
+        ax[len(mics) - 1].legend(loc='center',ncol = len(caseName), bbox_to_anchor=(.485, -.9),columnspacing = .3, handletextpad = .1)
 
 #   Configures axes, plot, and legend if only a single mic is plotted
 else:

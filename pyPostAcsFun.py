@@ -7,7 +7,7 @@ By Daniel Weitsman
 import os
 import numpy as np
 from scipy.fft import fft,ifft
-from scipy.signal import lfilter, filtfilt
+from scipy.signal import lfilter
 import matplotlib.pyplot as plt
 import h5py
 import re
@@ -154,7 +154,7 @@ def PSD(xn, fs):
     #   Frequency vector
     f = np.arange(int(len(xn) /2)) * df
     #   Computes the linear spectrum
-    Xm = fft(xn) * dt
+    Xm = fft(xn,axis = 0) * dt
     #   Computes double-sided PSD
     Sxx = 1/(len(xn)*dt) * np.conj(Xm) * Xm
     #   Computes single-sided PSD
@@ -176,7 +176,7 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
     :param Gxx_avg: mean-square averaged single-sided PSD
     '''
 
-    if len(np.shape(xn)) ==1:
+    if len(np.shape(xn)) == 1:
         xn = np.expand_dims(xn,axis = 1)
     #   points per record
     N = int((df*fs**-1)**-1)
@@ -229,7 +229,7 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
                 plt.savefig(os.path.join(save_path,'spectra_m'+str(i+1)+'.png'),format='png')
                 plt.close()
 
-    return f,Gxx,Gxx_avg
+    return f,Xm,Sxx,Gxx,Gxx_avg
 
 
 def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],levels = [0,100],save_fig = True, save_path = '' ,plot = True):
@@ -309,14 +309,14 @@ def filt_response(bb,aa,fs,N,plot=True):
         ax[0].tick_params(axis='x', labelsize=0)
         ax[0].grid()
         ax[0].set_xscale('log')
-        ax[0].set_xlim(10, 5e3)
+        # ax[0].set_xlim(10, 5e3)
 
         ax[1].plot(f, phase)
         ax[1].set_ylabel('Phase [$\circ$]')
         ax[1].set_xlabel('Frequency [Hz]')
         ax[1].grid()
         ax[1].set_xscale('log')
-        ax[1].set_xlim(10, 5e3)
+        # ax[1].set_xlim(10, 5e3)
 
     return f,y,h,phase
 
@@ -333,11 +333,10 @@ def xCorr(xn, yn, xfs, yfs):
     '''
 
     # assert len(xn) * xfs ** -1 == len(yn) * yfs ** -1, 'Ensure that the record lengths of both time series are equal'
-    dt = 1 / xfs
-    f, Xm, Sxx, Gxx = PSD(xn, xfs)
-    f, Ym, Syy, Gyy = PSD(yn, yfs)
-    Sxy = 1 / (len(xn) * dt) * np.conj(Xm) * Ym
-    Rxy = ifft(Sxy) * 1 / dt
+    Xm = fft(xn)*xfs**-1
+    Ym = fft(yn)*yfs**-1
+    Sxy = 1 / (len(xn) * xfs**-1) * np.conj(Xm) * Ym
+    Rxy = ifft(Sxy) * xfs
     return Rxy
 
 
@@ -395,3 +394,136 @@ def rpm_eval(ttl,fs,start_t,end_t):
     u_rpm = 1.94*np.std(rpm)/np.sqrt(len(LE_ind)-1)
 
     return LE_ind, lim_ind, rpm_nom, u_rpm
+
+def upsample(xn, fs, N):
+    '''
+    This function upsamples a time series that was sampled at a sampling rate of fs to a length of N points.
+    :param xn: times series
+    :param fs: sampling rate [Hz]
+    :param N: number of points to upsample to
+    :return:
+    '''
+
+    T = len(xn)*fs**-1
+    fs1 = N/T
+    Xm = (fft(xn.transpose())*fs**-1).transpose()
+    if len(Xm) != N:
+        if len(Xm)%2 ==0:
+            Xm = np.concatenate((Xm[:int(len(Xm)/2)], np.zeros((N-len(Xm),np.shape(Xm)[1])), Xm[int(len(Xm)/2):]))
+        else:
+            Xm = np.concatenate((Xm[:int(len(Xm)/2)],np.ones((1,np.shape(Xm)[1]))*Xm[int(len(Xm)/2)]/2, np.zeros((N-len(Xm),np.shape(Xm)[1])),np.ones((1,np.shape(Xm)[1]))*Xm[int(len(Xm)/2)]/2, Xm[int(len(Xm) / 2)+1:]))
+    xn = ifft(Xm.transpose()).transpose()*fs1
+
+    return xn,Xm
+
+def SD(Xm,fs):
+    '''
+    This function computes the single-sided spectral density (Gxx) from a linear spectrum.
+    :param Xm: complex two-sided linear spectrum [Pa]
+    :param fs: sampling rate [Hz]
+    :return:
+    '''
+
+    # number of points in record
+    N = len(Xm)
+    # temporal resolution
+    dt = fs ** -1
+    # single sided power spectral density [Pa^2/Hz]
+    Sxx = (dt * N) ** -1 * abs(Xm) ** 2
+    Gxx = Sxx[:int(N / 2)]
+    Gxx[1:-1] = 2 * Gxx[1:-1]
+    return Gxx
+
+def harm_extract(xn, tac_ind, fs, rev_skip, harm_filt,filt_shaft_harm,Nb):
+    '''
+    This function extracts te tonal and broadband components of a signal. The noise component separation is done in
+    the frequency domain. The signal is first parsed on a rev-to-rev basis. The linear spectrum of each rev is then
+    computed and upsampled by appending zeros to the linear spectrum of each record so that their lengths are equal.
+    To determine the tonal noise components the linear spectrum is averaged across all revs. The averaged linear
+    spectrum is then subtracted from that of each rev to determine the broadband contributions.
+
+    The averaged linear spectrum can be filtered via the harm_filt BPF_harm parameters.
+
+    :param xn: time series
+    :param tac_ind: tachometer indices by which to parse the time series, ensure that the sample rates of the time series and TAC are equivalent or interpolated.
+    :param fs: sampling rate of time series [Hz]
+    :param rev_skip: number of intermediate revs to skip
+    :param harm_filt: the BPF harmonic to retain, specified as a list [lowest BPF harmonic, highest BPF harmonic]
+    :param filt_shaft_harm: boolean if set to True the shaft order harmonics will be filtered from the signal
+    :param Nb:  number of blades, only needs to be specified when filt_shaft_harm is set to True
+    :return:
+    '''
+
+
+    if len(np.shape(xn)) == 1:
+        xn = np.expand_dims(xn,axis = 1)
+
+    rev_skip = rev_skip+1
+    dtac_ind = np.diff(tac_ind[::rev_skip])
+    N = np.max(dtac_ind)
+    N_avg = np.mean(dtac_ind)
+
+    fs1 = N / N_avg * fs
+    dt = fs1 ** -1
+    df = (N * dt) ** -1
+
+    xn_list = [xn[tac_ind[i]:tac_ind[i + 1]] for i in range(len(tac_ind[::rev_skip]) - 1)]
+
+    out = np.array(list(map(lambda x: upsample(x, fs, N), xn_list)))
+    Xn_avg = np.mean(out[:, 0, :, :], axis=0)
+    Xm_avg = np.mean(out[:, 1, :, :], axis=0)
+    u = 1.94*np.std(out[:, 1, :, :], axis=0)/np.sqrt(len(tac_ind)-1)
+
+    Xm_bb = out[:, 1, :, :]-Xm_avg
+    Xn_bb = (ifft(Xm_bb.transpose(),axis = 1).transpose()*fs1).reshape(np.shape(Xm_bb)[0]*np.shape(Xm_bb)[1],np.shape(Xm_bb)[2])
+
+    if isinstance(harm_filt, list):
+
+        Xm_avg[:harm_filt[0]] = 0
+        Xm_avg[-harm_filt[0]+1:] = 0
+        Xm_avg[harm_filt[1]+1:-harm_filt[1]] = 0
+
+        u[:harm_filt[0]] = 0
+        u[-harm_filt[0]+1:] = 0
+        u[harm_filt[1]+1:-harm_filt[1]] = 0
+
+        if filt_shaft_harm:
+            Xm_avg[1::Nb] = 0
+
+    f = np.arange(int(N / 2)) * df
+
+    Xn_avg_filt = ifft(Xm_avg,axis = 0)*fs
+    out = list(map(lambda x: SD(x,fs1),[Xm_avg,abs(Xm_avg)-u,abs(Xm_avg)+u]))
+    spl = 10 * np.log10(out[0]*df / 20e-6 ** 2)
+
+    u_low = spl-10 * np.log10(out[1]*df / 20e-6 ** 2)
+    u_high = 10 * np.log10(out[2]*df / 20e-6 ** 2)-spl
+
+    return f,fs1,spl,u_low, u_high, Xn_avg, Xm_avg,Xn_avg_filt, Xn_bb
+
+def ffilter(xn,fs, btype, fc):
+    '''
+    This function filters the input signal in the frequency domain.
+    :param xn: time series
+    :param fs: sampling rate [Hz]
+    :param btype: type of filter (lowpass (lp), highpass (hp), bandpass (bp))
+    :param fc: cutoff frequency (-3dB), must be specified as a list if a bandpass filter is used.
+    :return:
+    '''
+    df = (len(xn)*fs**-1)**-1
+    f, Xm, Sxx, Gxx = PSD(xn, fs)
+    if btype == 'lp':
+        Xm[-int(fc/df):] = 0
+    elif btype == 'hp':
+        Xm[:int(fc/df)] = 0
+    elif btype == 'bp':
+        assert isinstance(fc,list), 'If a bandpass filter is being applied to the time series the low/high cutoff frequencies should be specified as a list.'
+        Xm[:int(fc[0]/df)] = 0
+        Xm[int(fc[-1]/df):-int(fc[-1]/df) - 1] = 0
+        Xm[-int(fc[0]/df):] = 0
+    xn_filt = ifft(Xm,axis =0) * fs
+
+    return Xm,xn_filt
+
+
+

@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 import pyPostAcsFun as fun
 import matplotlib.pyplot as plt
-from scipy.fft import fft,ifft
+from scipy.fft import fft
 
 #%% Sets font parameters
 
@@ -17,9 +17,9 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   Parent directory where all of the data files are contained.
-exp_dir ='/Users/danielweitsman/Box/Jan21Test/TAMU/runs/rpm_sweeps/cghb/cghb14'
+exp_dir ='//Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/e2b95'
 
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/py scripts/VSP2WOPWOP/Acoustic Info/GoFly/Coax/gofly_18inch_DegenGeom'
+pred_dir ='//Users/danielweitsman/Desktop/Masters_Research/lynx/coll_trim_e2b95/Lynx_DegenGeom'
 
 leglab = ['Measured','Predicted']
 # leglab=''
@@ -33,7 +33,7 @@ mics = [1,5,9]
 #   Frequency resolution of spectra [Hz]
 df_exp = 5
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
-axis_lim = [100, 1.5e3, 0, 90]
+axis_lim = [100, 600, 0, 70]
 
 #   Starting time from which to compute the spectra
 start_t = 10
@@ -62,7 +62,7 @@ pred_data['geometry_values'] = np.flip(pred_data['geometry_values'],axis = 1)
 pred_data['function_values'] = np.flip(pred_data['function_values'],axis = 1)
 
 coord = np.squeeze(pred_data['geometry_values'][:, :, 0, :])
-phi = np.arctan2(coord[:, -1], coord[:, 0]) * 180 / np.pi
+phi = np.arctan2(coord[:, -1], coord[:, 1]) * 180 / np.pi
 azi = np.arctan2(coord[:, 1], coord[:, 0]) * 180 / np.pi
 
 OASPL_pred = 10 * np.log10(np.mean((pred_data['function_values'][:, :, :, 1:]-np.expand_dims(np.mean(pred_data['function_values'][:, :, :, 1:],axis = 2),axis = 2)) ** 2, axis=2) / 20e-6 ** 2)
@@ -233,6 +233,6 @@ ax.plot(phi * np.pi / 180, np.squeeze(OASPL_exp[:9]), linestyle = linestyle[src]
 ax.plot(phi * np.pi / 180, np.squeeze(OASPL_pred[0, :, -1]), linestyle = linestyle[src])
 ax.set_thetamax(phi[0]+2)
 ax.set_thetamin(phi[-1]-2)
-ax.set_ylim([40,100])
+ax.set_ylim([0,100])
 ax.set_ylabel(' OASPL (dB, re:20$\mu$Pa)',position = (1,.15),  labelpad = -100, rotation = phi[-1]-5)
 ax.legend(['Measured','Predicted'], ncol=1,loc='center',bbox_to_anchor=(.25, 0.9))

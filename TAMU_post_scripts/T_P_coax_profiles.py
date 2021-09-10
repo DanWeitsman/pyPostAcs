@@ -7,7 +7,7 @@ import bisect
 
 # %%
 fontName = 'Times New Roman'
-fontSize = 12
+fontSize = 15
 plt.rc('font', **{'family': 'serif', 'serif': [fontName], 'size': fontSize})
 plt.rc('mathtext', **{'default': 'regular'})
 plt.rc('text', **{'usetex': False})
@@ -16,7 +16,7 @@ plt.rc('lines', **{'linewidth': 2})
 # %%
 
 # path to directory containing the rpm sweep cases
-dir = '/Users/danielweitsman/Box/May21Test/rpm_sweep/cshb'
+dir = '/Users/danielweitsman/Box/May21Test/rpm_sweep/cvhb/'
 
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.

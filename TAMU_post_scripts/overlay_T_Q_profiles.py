@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 #%%
 fontName = 'Times New Roman'
-fontSize = 12
+fontSize = 15
 plt.rc('font',**{'family':'serif','serif':[fontName],'size':fontSize})
 plt.rc('mathtext',**{'default':'regular'})
 plt.rc('text',**{'usetex':False})
@@ -16,7 +16,7 @@ dir ='/Users/danielweitsman/Box/May21Test/rpm_sweep/'
 #   names of points you want to compare
 caseName  = ['cshb','cvhb']
 #   legend labels, if equated to an empty string (''), the caseName would be used as the legend labels
-leglab = ['Straight','High Solidity']
+leglab = ['Straight','Double-swept']
 
 linestyle = ['-.','-','--']
 
@@ -33,7 +33,7 @@ for i,case in enumerate(caseName):
         ax_T.errorbar(dat_file['rpm_avg_2'], dat_file['T_tot'], yerr=dat_file['T_tot_err'], fmt= linestyle[i]+'o')
         ax_Q.errorbar(dat_file['rpm_avg_2'], dat_file['Q_tot'], yerr=dat_file['Q_tot_err'], fmt=linestyle[i]+'o')
 
-ax_T.set_title(' vs. '.join(caseName))
+# ax_T.set_title(' vs. '.join(caseName))
 ax_T.set_ylabel('Thrust, T (N)')
 ax_T.set_xlabel('RPM')
 ax_T.set_xlim([1000, 6000])

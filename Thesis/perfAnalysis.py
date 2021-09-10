@@ -16,17 +16,17 @@ plt.rc('lines', **{'linewidth': 2})
 # %%
 
 # path to directory containing the rpm sweep cases
-dir = '/Users/danielweitsman/Box/Jan21Test/TAMU/runs'
+dir = '/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/rpm_sweep/h2b'
 
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.
-caseName = ['cghb/','ush']
+caseName = []
 
 # Set equal to "True" in order to plot the thrust/torque/rpm time series for each run. These plots are not saved but are
 # useful for determining the averaging interval to use for the thrust/torque profiles.
-plot_tseries = False
+plot_tseries = True
 plot_T_Q_profile = False
-plot_OASPL= True
+plot_OASPL= False
 
 #   save generated figures
 save_fig = False
@@ -93,7 +93,7 @@ if caseName == []:
     # This line of code rearranges the order of the cases so that they are increasing
     # numerically, however it only applies to the TAMU data. Comment this line and uncomment the previous line if you
     # are working with an alternate dataset.
-    cases = [os.path.basename(dir) + str(x) for x in sorted([int(x[3:]) for x in os.listdir(dir)])]
+    cases = [os.path.basename(dir)[:3] + str(x) for x in sorted([int(x[3:]) for x in os.listdir(dir)])]
 else:
     cases = caseName
 
@@ -197,6 +197,13 @@ Fx_2 = My_avg/d*np.cos(22.5*np.pi/180)+Mx_avg/d*np.sin(22.5*np.pi/180)
 Fy_2 = My_avg/d*np.sin(22.5*np.pi/180)+Mx_avg/d*np.cos(22.5*np.pi/180)
 
 #%%
+
+T_fit =np.poly1d(np.polyfit(rpm_avg,T_avg,2))
+Q_fit = np.poly1d(np.polyfit(rpm_avg,Q_avg,2))
+
+rpm_run = np.arange(2000,6500,500)
+
+#%%
 if save_fig:
     #   Creates a new figures folder in the parent directory where to save the thrust and torque profiles
     if not os.path.exists(os.path.join(os.path.dirname(dir), 'Figures')):
@@ -211,12 +218,14 @@ if plot_T_Q_profile:
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
     ax.set_title(os.path.basename(dir))
     ax.errorbar(rpm_avg, T_avg, yerr=T_err, fmt='-.o')
+    plt.plot(rpm_run,T_fit(rpm_run))
     ax.set_ylabel('Thrust, T (N)')
     ax.set_xlabel('RPM')
     # ax.set_xlim([1000, 5250])
     # ax.set_ylim([0, 70])
     ax.grid()
-    plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'T_profile.png'), format='png')
+    if save_fig:
+        plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'T_profile.png'), format='png')
 
 # %%
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
