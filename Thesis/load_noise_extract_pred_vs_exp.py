@@ -24,6 +24,7 @@ exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/h2b69/'
 #   directory containing the prediction data file.
 pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
 
+save_h5 = True
 #   raw wopwop output file names
 file = ['pressure.h5']
 
@@ -31,7 +32,7 @@ file = ['pressure.h5']
 mics = [1,9]
 
 # min and max shaft order harmonics to exclude from the analysis (set max to -1 to include all upper order harmonics)
-harm_filt = [2, 4]
+harm_filt = [2, 6]
 
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
 axis_lim = [50, 1e3, 0, 60]
@@ -77,7 +78,7 @@ ind = list(map(lambda x: bisect(t_acs,x),t[LE_ind[lim_ind[0]:lim_ind[1]]]))
 
 #%%
 
-f, fs1, spl, u_low, u_high, Xn_avg, Xm_avg, Xn_avg_filt, Xn_bb = fun.harm_extract(exp, tac_ind=ind, fs=fs_exp, rev_skip=0, harm_filt=harm_filt, filt_shaft_harm =  True, Nb=Nb)
+f_exp, fs1, spl, u_low, u_high, Xn_avg, Xm_avg, Xn_avg_filt, Xn_bb = fun.harm_extract(exp, tac_ind=ind, fs=fs_exp, rev_skip=0, harm_filt=harm_filt, filt_shaft_harm =  True, Nb=Nb)
 
 xn_inph = ifft((Xm_avg[:,mics[0]-1]+Xm_avg[:,mics[-1]-1])/2)*fs1
 
@@ -86,10 +87,10 @@ BPF_harm = np.arange(len(Xn_avg_filt)/2)/Nb
 df = (len(Xn_avg_filt)*fs1**-1)**-1
 
 Xm_inph = (Xm_avg[:,mics[0]-1]+Xm_avg[:,mics[-1]-1])/2
-spl_inph = 10*np.log10(fun.SD(Xm_inph,fs1)*df/20e-6**2)
+Gxx_inph = fun.SD(Xm_inph,fs1)
 
 Xm_outph = Xm_avg-np.expand_dims(Xm_inph,axis =1)
-spl_outph = 10*np.log10(fun.SD(Xm_outph,fs1)*df/20e-6**2)
+Gxx_outph =  fun.SD(Xm_outph,fs1)
 
 #%%
 #   number of observers
@@ -123,10 +124,20 @@ df = ((fs_pred**-1)*L)**-1
 N = ((fs_pred ** -1 * df)**-1)
 Nfft = np.floor(L/N)
 
+pred_spec = list(map(lambda i: fun.msPSD(np.squeeze(pred[list(pred.keys())[0]]['pressure']['function_values'][:, :, :, i]).transpose(), fs_pred, df = df, win = False, ovr = 0,save_fig = False, plot = False),np.arange(1,4)))
+f_pred = pred_spec[0][0]
+Xm_avg_pred = np.array([pred_spec[i][1] for i in range(len(pred_spec))]).transpose()
+Gxx_avg_pred = np.array([pred_spec[i][-1] for i in range(len(pred_spec))]).transpose()
+
 # f_pred,Gxx_pred,spl_pred = PSD(pred[list(pred.keys())[0]]['pressure']['function_values'][:,:,-1])
-f,Xm_pred,Sxx_pred,Gxx_pred,Gxx_avg_pred = fun.msPSD(np.squeeze(pred[list(pred.keys())[0]]['pressure']['function_values'][0, :, :, 3]).transpose(), fs_pred, df = df, win = False, ovr = 0, save_fig = False, plot = False)
 f,Xm_inph_pred,Sxx_inph_pred,Gxx_inph_pred,Gxx_avg_inph_pred = fun.msPSD(np.squeeze(xn_inph_pred), fs_pred, df = df, win = False, ovr = 0, save_fig = False, plot = False)
 f,Xm_outph_pred,Sxx_outph_pred,Gxx_outph_pred,Gxx_avg_outph_pred = fun.msPSD(np.squeeze(pred[list(pred.keys())[0]]['pressure']['function_values'][0, :, :, 3] - xn_inph_pred).transpose(), fs_pred, df = df, win = False, ovr = 0, save_fig = False, plot = False)
+
+#%%
+# Xm_avg_trim = np.concatenate((Xm_avg[:int(N/2)],Xm_avg[-int(N/2):]))
+# Xm_load = Xm_avg_trim[:,mics[0]-1:mics[-1]]-np.squeeze(Xm_avg_pred[:,:,:,0]).transpose()
+# xn_load = ifft(Xm_load)*fs_pred
+# Gxx_load = fun.SD(Xm_load,fs_pred)
 
 #%%
 
@@ -155,16 +166,22 @@ for i,m in enumerate(mics):
         if ii!=2:
             ax[ii].tick_params(axis='x', labelsize=0)
         ax[ii].set_xlim([0,1])
+        ax[ii].set_ylim([-0.015, .015])
         ax[ii].grid('on')
 
     ax[0].set_title('In-Phase')
-    ax[1].set_title('Out Of Phase')
+    ax[1].set_title('Out-of-Phase')
     ax[2].set_title('Total')
 
     ax[1].set_ylabel('Pressure [Pa]')
     plt.suptitle(f'$Mic\ {m} \ ( \phi = {round(phi[m - 1])}^\circ)$')
     ax[-1].set_xlabel('Rotation')
-    ax[-1].legend(['Predicted', 'Measured'], loc='center', ncol=3,bbox_to_anchor=(.5, -.65))
+    ax[-1].legend(['Predicted', 'Extracted'], loc='center', ncol=3,bbox_to_anchor=(.5, -.65))
+
+    plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) +f'_m{m}'+ '_exp_vs_pred_p_tseries' + '.eps'),
+                format='eps')
+    plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) +f'_m{m}'+ '_exp_vs_pred_p_tseries' + '.png'),
+                format='png')
 
 #%%
     #   Loops through each mic
@@ -176,28 +193,60 @@ for i, m in enumerate(mics):
 
     ax[0].stem(f/(omega/60*Nb), 10 * np.log10(Gxx_avg_inph_pred * df / 20e-6 ** 2), linefmt=f'C{0}{"-."}', markerfmt=f'C{0}o',basefmt=f'C{0}')
     ax[1].stem(f/(omega/60*Nb), 10 * np.log10(Gxx_avg_outph_pred[:,m-1] * df / 20e-6 ** 2), linefmt=f'C{0}{"-."}', markerfmt=f'C{0}o',basefmt=f'C{0}')
-    ax[2].stem(f/(omega/60*Nb), 10 * np.log10(Gxx_avg_pred[:,m-1] * df / 20e-6 ** 2), linefmt=f'C{0}{"-."}', markerfmt=f'C{0}o',basefmt=f'C{0}')
+    ax[2].stem(f/(omega/60*Nb), 10 * np.log10(Gxx_avg_pred[m-1,:,-1] * df / 20e-6 ** 2), linefmt=f'C{0}{"-."}', markerfmt=f'C{0}o',basefmt=f'C{0}')
 
-    ax[0].stem(BPF_harm, spl_inph,linefmt =f'C{1}{"-"}', markerfmt =f'C{1}o',basefmt=f'C{1}')
-    ax[1].stem(BPF_harm, spl_outph[:,m-1],linefmt =f'C{1}{"-"}', markerfmt =f'C{1}o',basefmt=f'C{1}')
-    ax[2].stem(BPF_harm, spl[:,m-1],linefmt =f'C{1}{"-"}', markerfmt =f'C{1}o',basefmt=f'C{1}')
+    ax[0].stem(BPF_harm, 10*np.log10(Gxx_inph*df/20e-6**2),linefmt =f'C{1}{"-"}', markerfmt =f'C{1}^',basefmt=f'C{1}')
+    ax[1].stem(BPF_harm, 10*np.log10(Gxx_outph*df/20e-6**2)[:,m-1],linefmt =f'C{1}{"-"}', markerfmt =f'C{1}^',basefmt=f'C{1}')
+    ax[2].stem(BPF_harm, spl[:,m-1],linefmt =f'C{1}{"-"}', markerfmt =f'C{1}^',basefmt=f'C{1}')
 
     for ii in range(3):
         if ii != 2:
             ax[ii].tick_params(axis='x', labelsize=0)
-        ax[ii].set_xticks(np.arange(1, harm_filt[-1] / Nb + 1))
-        ax[ii].set_xlim([0, harm_filt[-1] / Nb + 1])
-        ax[ii].set_ylim([axis_lim[-2], axis_lim[-1]])
+        ax[ii].axis([0, 4, axis_lim[2], 40])
+        ax[ii].set_xticks(np.arange(1, 5))
+        # ax[ii].set_ylim([axis_lim[-2], axis_lim[-1]])
         ax[ii].grid('on')
 
     ax[0].set_title('In-Phase')
-    ax[1].set_title('Out Of Phase')
+    ax[1].set_title('Out-of-Phase')
     ax[2].set_title('Total')
 
     ax[1].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
     plt.suptitle(f'$Mic\ {m} \ ( \phi = {round(phi[m - 1])}^\circ)$')
     ax[-1].set_xlabel('BPF Harmonic')
-    ax[-1].legend(['Predicted', 'Measured'], loc='center', ncol=3, bbox_to_anchor=(.5, -.65))
+    ax[-1].legend(['Predicted', 'Extracted'], loc='center', ncol=3, bbox_to_anchor=(.5, -.65))
+
+    plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) +f'_m{m}'+ '_exp_vs_pred_spec' + '.eps'),
+                format='eps')
+    plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) +f'_m{m}'+ '_exp_vs_pred_spec' + '.png'),
+                format='png')
+#%%
+# #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
+# fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+# #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
+# plt.subplots_adjust(hspace=0.35, bottom=0.15)
+#
+# #   Loops through each mic
+# for i,m in enumerate(mics):
+#
+#     ax[i].plot(pred[list(pred.keys())[0]]['pressure']['function_values'][0, m - 1, :, 0] / (omega / 60) ** -1,
+#                pred[list(pred.keys())[0]]['pressure']['function_values'][0, m - 1, :, 2], linestyle='-.')
+#
+#     ax[i].plot(pred[list(pred.keys())[0]]['pressure']['function_values'][0, m - 1, :, 0] / (omega / 60) ** -1, xn_load[:,m-1],linestyle='-')
+#
+#     if i!=2:
+#         ax[i].tick_params(axis='x', labelsize=0)
+#     ax[i].set_xlim([0,1])
+#     ax[i].set_ylim([-0.015, .015])
+#     ax[i].grid('on')
+#
+#     ax[0].set_title('In-Phase')
+#     ax[1].set_title('Out-of-Phase')
+#
+#     ax[1].set_ylabel('Pressure [Pa]')
+#     plt.suptitle(f'$Mic\ {m} \ ( \phi = {round(phi[m - 1])}^\circ)$')
+#     ax[-1].set_xlabel('Rotation')
+#     ax[-1].legend(['Predicted', 'Extracted'], loc='center', ncol=3,bbox_to_anchor=(.5, -.65))
 
 #%%
 linestyle = ['-','-.']
@@ -224,3 +273,4 @@ ax[0].set_title('Prediction')
 ax[1].set_title('Measurement')
 ax[-1].set_xlabel('Rotation')
 ax[-1].legend([f'$Mic\ {mics[0]} \ ( \phi = {round(phi[mics[0] - 1])}^\circ)$',f'$Mic\ {mics[-1]} \ ( \phi = {round(phi[mics[-1] - 1])}^\circ)$'], loc='center', ncol=3,bbox_to_anchor=(.5, -.35))
+

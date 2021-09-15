@@ -501,7 +501,7 @@ def harm_extract(xn, tac_ind, fs, rev_skip, harm_filt,filt_shaft_harm,Nb):
 
     return f,fs1,spl,u_low, u_high, Xn_avg, Xm_avg,Xn_avg_filt, Xn_bb
 
-def ffilter(xn,fs, btype, fc):
+def ffilter(xn,fs, btype, fc,filt_shaft_harm,Nb):
     '''
     This function filters the input signal in the frequency domain.
     :param xn: time series
@@ -512,6 +512,7 @@ def ffilter(xn,fs, btype, fc):
     '''
     df = (len(xn)*fs**-1)**-1
     f, Xm, Sxx, Gxx = PSD(xn, fs)
+
     if btype == 'lp':
         Xm[-int(fc/df):] = 0
     elif btype == 'hp':
@@ -519,8 +520,12 @@ def ffilter(xn,fs, btype, fc):
     elif btype == 'bp':
         assert isinstance(fc,list), 'If a bandpass filter is being applied to the time series the low/high cutoff frequencies should be specified as a list.'
         Xm[:int(fc[0]/df)] = 0
-        Xm[int(fc[-1]/df):-int(fc[-1]/df) - 1] = 0
-        Xm[-int(fc[0]/df):] = 0
+        Xm[int(fc[-1]/df)+1:-int(fc[-1]/df)] = 0
+        Xm[-int(fc[0]/df)+1:] = 0
+
+    if filt_shaft_harm:
+        Xm[1::Nb] = 0
+
     xn_filt = ifft(Xm,axis =0) * fs
 
     return Xm,xn_filt
