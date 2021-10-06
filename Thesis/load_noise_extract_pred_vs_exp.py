@@ -20,9 +20,9 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   directory containing the experimental data file.
-exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/h2b69/'
+exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/trim_compare/e2b110/'
 #   directory containing the prediction data file.
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/e2b110/'
 
 save_h5 = True
 #   raw wopwop output file names
@@ -158,15 +158,15 @@ for i,m in enumerate(mics):
     ax[2].plot(pred[list(pred.keys())[0]]['pressure']['function_values'][0, m - 1, :, 0] / (omega / 60) ** -1,
                pred[list(pred.keys())[0]]['pressure']['function_values'][0, m - 1, :, -1], linestyle='-.')
 
-    ax[0].plot(t_nondim, -xn_inph,linestyle='-')
-    ax[1].plot(t_nondim, -(Xn_avg_filt[:,m-1]-xn_inph),linestyle='-')
-    ax[2].plot(t_nondim, -Xn_avg_filt[:,m-1],linestyle='-')
+    ax[0].plot(t_nondim, xn_inph,linestyle='-')
+    ax[1].plot(t_nondim, (Xn_avg_filt[:,m-1]-xn_inph),linestyle='-')
+    ax[2].plot(t_nondim, Xn_avg_filt[:,m-1],linestyle='-')
 
     for ii in range(3):
         if ii!=2:
             ax[ii].tick_params(axis='x', labelsize=0)
         ax[ii].set_xlim([0,1])
-        ax[ii].set_ylim([-0.015, .015])
+        # ax[ii].set_ylim([-0.015, .015])
         ax[ii].grid('on')
 
     ax[0].set_title('In-Phase')
@@ -176,7 +176,7 @@ for i,m in enumerate(mics):
     ax[1].set_ylabel('Pressure [Pa]')
     plt.suptitle(f'$Mic\ {m} \ ( \phi = {round(phi[m - 1])}^\circ)$')
     ax[-1].set_xlabel('Rotation')
-    ax[-1].legend(['Predicted', 'Extracted'], loc='center', ncol=3,bbox_to_anchor=(.5, -.65))
+    ax[-1].legend(['Predicted', 'Measured'], loc='center', ncol=3,bbox_to_anchor=(.5, -.65))
 
     plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) +f'_m{m}'+ '_exp_vs_pred_p_tseries' + '.eps'),
                 format='eps')
@@ -202,7 +202,7 @@ for i, m in enumerate(mics):
     for ii in range(3):
         if ii != 2:
             ax[ii].tick_params(axis='x', labelsize=0)
-        ax[ii].axis([0, 4, axis_lim[2], 40])
+        ax[ii].axis([0, 4, axis_lim[2], 70])
         ax[ii].set_xticks(np.arange(1, 5))
         # ax[ii].set_ylim([axis_lim[-2], axis_lim[-1]])
         ax[ii].grid('on')
@@ -214,12 +214,13 @@ for i, m in enumerate(mics):
     ax[1].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
     plt.suptitle(f'$Mic\ {m} \ ( \phi = {round(phi[m - 1])}^\circ)$')
     ax[-1].set_xlabel('BPF Harmonic')
-    ax[-1].legend(['Predicted', 'Extracted'], loc='center', ncol=3, bbox_to_anchor=(.5, -.65))
+    ax[-1].legend(['Predicted', 'Measured'], loc='center', ncol=3, bbox_to_anchor=(.5, -.65))
 
     plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) +f'_m{m}'+ '_exp_vs_pred_spec' + '.eps'),
                 format='eps')
     plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) +f'_m{m}'+ '_exp_vs_pred_spec' + '.png'),
                 format='png')
+
 #%%
 # #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 # fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))

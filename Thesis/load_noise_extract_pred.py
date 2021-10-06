@@ -19,7 +19,6 @@ plt.rc('lines',**{'linewidth':2})
 
 
 #%%
-
 pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
 
 #   raw wopwop output file names
@@ -27,9 +26,9 @@ file = ['pressure.h5']
 
 # set equal to true to reformat the raw data from wopwop and write it out as an HDF5 file, this only needs to be set
 # to true if this is your first time working with the predicted data.
-save_h5= True
+save_h5= False
 
-save_fig = True
+save_fig = False
 #   legend labels
 leglab = ['Measured','Predicted']
 # leglab=''
@@ -142,7 +141,7 @@ for i, m in enumerate(mics):
     if i!=len(mics)-1:
         ax[i].tick_params(axis='x', labelsize=0)
     ax[i].set_xlim([0,1])
-    ax[i].set_ylim([-0.015,0.015])
+    # ax[i].set_ylim([-0.015,0.015])
     ax[i].grid('on')
     ax[i].set_ylabel('Pressure [Pa]')
 
@@ -195,6 +194,47 @@ plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(p
             format='eps')
 plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) + '_rel_spec' + '.png'),
             format='png')
+ #%% Plots predicted spectrum
+width = .125
+
+hatch = ['/', '|', '-', '+', 'x', 'o', 'O', '.', '*']
+#   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
+fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
+#   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
+plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
+
+#   Loops through each mic
+for i,m in enumerate(mics):
+    for src in range(3):
+        #   Plots the resulting spectra in dB
+        ax[i].bar(f_pred[::2]/(omega/60*Nb)+width*src-width*2, 10*np.log10(Gxx_avg_pred[m-1,::2,src] * df/20e-6**2),width = width,hatch =hatch[src]*2,align='center',alpha = .5)
+
+            # ax[i].stem(f_pred/(omega/60*Nb), 10*np.log10(Gxx_avg_pred[m-1,:,src] * df/20e-6**2), linefmt =f'C{src}{linestyle[src]}', markerfmt =f'C{src}o',basefmt=f'C{src}')
+    ax[i].bar(f[::2] / (omega / 60 * Nb)+width*3.5-width*2, 10 * np.log10(Gxx_avg_inph[::2,0] * df / 20e-6 ** 2),width = width,align='center',hatch =hatch[3]*2)
+    ax[i].bar(f[::2] / (omega / 60 * Nb)+width*4.5-width*2, 10 * np.log10(Gxx_avg_outph[::2,m - 1] * df / 20e-6 ** 2),width = width,align='center',hatch =hatch[4]*2)
+
+    # ax[i].stem(f / (omega / 60 * Nb), 10 * np.log10(Gxx_avg_inph[:,0] * df / 20e-6 ** 2),linefmt=f'C{3}{":"}', markerfmt=f'C{3}^', basefmt=f'C{3}')
+    # ax[i].stem(f / (omega / 60 * Nb), 10 * np.log10(Gxx_avg_outph[:,m - 1] * df / 20e-6 ** 2),linefmt=f'C{4}{":"}', markerfmt=f'C{4}^', basefmt=f'C{4}')
+
+for i, m in enumerate(mics):
+    ax[i].set_title(f'$Mic\ {m} \ ( \phi = {round(phi[m-1])}^\circ)$')
+    if i!=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    # ax[ii].set_xscale('log')
+    ax[i].set_yticks(np.arange(0, axis_lim[-1], 20))
+    ax[i].axis([0,4,axis_lim[2],axis_lim[-1]])
+    ax[i].set_xticks(np.arange(1, 5))
+
+    ax[i].grid('on')
+    ax[i].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+
+ax[len(mics) - 1].set_xlabel('BPF Harmonic')
+ax[len(mics) - 1].legend(['Thickness','Loading', 'Total','In-phase', 'Out-of-phase'],loc='center',ncol = 5, bbox_to_anchor=(.5, -.35))
+
+plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) + '_rel_spec_bar' + '.eps'),
+            format='eps')
+plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(pred_dir)) + '_rel_spec_bar' + '.png'),
+            format='png')
 
 #%%
 fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5),subplot_kw=dict(polar=True))
@@ -226,7 +266,7 @@ for i, m in enumerate(mics):
     if i != len(mics) - 1:
         ax[i].tick_params(axis='x', labelsize=0)
     # ax[i].axis([0,4,axis_lim[2],axis_lim[-1]])
-    ax[i].axis([0, 4, 0, 40])
+    ax[i].axis([0, 4, axis_lim[2], axis_lim[-1]])
     ax[i].set_xticks(np.arange(1, 5))
     ax[i].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
     ax[i].set_title(f'$Mic\ {m} \ ( \phi = {round(phi[m-1])}^\circ)$')
@@ -253,7 +293,7 @@ for i, m in enumerate(mics):
     if i != len(mics) - 1:
         ax[i].tick_params(axis='x', labelsize=0)
     # ax[i].axis([0,4,axis_lim[2],axis_lim[-1]])
-    ax[i].axis([0, 4, 30, 40])
+    ax[i].axis([0, 4, axis_lim[2], axis_lim[-1]])
     ax[i].set_xticks(np.arange(1, 5))
     ax[i].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
     ax[i].set_title(f'$Mic\ {m} \ ( \phi = {round(phi[m-1])}^\circ)$')
@@ -271,7 +311,7 @@ plt.savefig(os.path.join(pred_dir, 'Figures', os.path.basename(os.path.dirname(p
 # Saves the data to a new h5 file, which could later be referenced tp compare the thrust/torque profiles of different
 # rotor configurations.
 if save_h5:
-    sdata = {'df':df,'f_pred':f_pred, 'f':f,  'Gxx_predict':Gxx_avg_pred, 'Gxx_extract':Gxx_avg_outph, 'phi':phi}
+    sdata = {'Nb':Nb,'omega':omega,'df':df,'f_pred':f_pred, 'f':f,  'Gxx_avg_pred':Gxx_avg_pred, 'Gxx_avg_outph':Gxx_avg_outph,'Gxx_avg_inph_load':Gxx_avg_inph_load,'Gxx_avg_inph':Gxx_avg_inph, 'phi':phi}
 
     if os.path.exists(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_sdata.h5')):
         os.remove(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_sdata.h5'))

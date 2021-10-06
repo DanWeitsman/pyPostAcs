@@ -15,21 +15,22 @@ plt.rc('lines',**{'linewidth':2})
 
 
 #%%
-dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/'
-
+dir ='//Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/long_cyc_sweep/lowM/h2b/'
+save_dir = '/Users/danielweitsman/Desktop/Masters_Research/Thesis/Analysis/9_15_21'
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.
-caseName = ['h2b69']
+caseName = ['h2b48','h2b46','h2b56']
 
-leglab = ''
+# leglab = ['Collective trim', 'Cyclic trim']
+leglab = [r"$\theta_{1s} =0^\circ$",r'$\theta_{1x} = 4^\circ$',r'$\theta_{1s} = -4^\circ$']
 #   Linestyle for each case
-linestyle =['-','-.','--','-']
+linestyle =['-','-.','--','-',':']
 
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
 mics = [1,9]
 
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
-axis_lim = [50, 1e3, 0, 55]
+axis_lim = [50, 1e3, 0, 70]
 
 #%%
 sdata = {}
@@ -49,6 +50,10 @@ if not isinstance(leglab,list):
 #%%
 c  = list(mcolors.TABLEAU_COLORS.keys())[:len(caseName)]
 
+case_str = ''
+for case in caseName:
+    case_str = case_str+'_'+case
+case_str = case_str[1:]
 #%%
 #   Loops through each mic
 for i,m in enumerate(mics):
@@ -59,15 +64,15 @@ for i,m in enumerate(mics):
 
     for ii,case in enumerate(caseName):
 
-        ax[0].plot(sdata[case]['t_nondim'], -sdata[case]['xn_inph'],c = c[ii] ,linestyle=linestyle[ii])
-        ax[1].plot(sdata[case]['t_nondim'], -(sdata[case]['Xn_avg_filt'][:,m-1]-sdata[case]['xn_inph']),c = c[ii] ,linestyle=linestyle[ii])
-        ax[2].plot(sdata[case]['t_nondim'], -sdata[case]['Xn_avg_filt'][:,m-1],c = c[ii] ,linestyle=linestyle[ii])
+        ax[0].plot(sdata[case]['t_nondim'], sdata[case]['xn_inph'],c = c[ii] ,linestyle=linestyle[ii])
+        ax[1].plot(sdata[case]['t_nondim'], (sdata[case]['Xn_avg_filt'][:,m-1]-sdata[case]['xn_inph']),c = c[ii] ,linestyle=linestyle[ii])
+        ax[2].plot(sdata[case]['t_nondim'], sdata[case]['Xn_avg_filt'][:,m-1],c = c[ii] ,linestyle=linestyle[ii])
 
     for ii in range(3):
         if ii!=2:
             ax[ii].tick_params(axis='x', labelsize=0)
         ax[ii].set_xlim([0,1])
-        ax[ii].set_ylim([-0.015, .015])
+        # ax[ii].set_ylim([-0.07, .07])
         ax[ii].grid('on')
 
     ax[0].set_title('In-Phase')
@@ -78,6 +83,10 @@ for i,m in enumerate(mics):
     plt.suptitle(f'Mic {m}')
     ax[-1].set_xlabel('Rotation')
     ax[-1].legend(leglab, loc='center', ncol=3,bbox_to_anchor=(.5, -.65))
+
+
+    plt.savefig(os.path.join(save_dir,case_str+ f'_m{m}'+ '_tseries' + '.eps'),format='eps')
+    plt.savefig(os.path.join(save_dir,case_str+ f'_m{m}'+ '_tseries' + '.png'),format='png')
 
 #%%
 #   Loops through each mic
@@ -109,3 +118,15 @@ for i, m in enumerate(mics):
     plt.suptitle(f'Mic {m}')
     ax[-1].set_xlabel('BPF Harmonic')
     ax[-1].legend(leglab, loc='center', ncol=3, bbox_to_anchor=(.5, -.65))
+
+    plt.savefig(os.path.join(save_dir,case_str+ f'_m{m}'+ '_spec' + '.eps'),format='eps')
+    plt.savefig(os.path.join(save_dir,case_str+ f'_m{m}'+ '_spec' + '.png'),format='png')
+
+#%%
+phi = np.arange(360)*np.pi/180
+#   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
+fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+#   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
+plt.subplots_adjust(hspace=0.35, bottom=0.15)
+ax.plot(phi*180/np.pi,np.sin(phi))
+ax.plot(phi*180/np.pi,-np.sin(phi)**2)

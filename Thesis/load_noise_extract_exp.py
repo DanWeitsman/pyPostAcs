@@ -19,17 +19,17 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   Parent directory where all of the data files are contained.
-exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/h2b69'
+exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/trim_compare/e2b109'
 
 save_h5 = True
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
 mics = [1,9]
 
 # min and max shaft order harmonics to exclude from the analysis (set max to -1 to include all upper order harmonics)
-harm_filt = [2, 5]
+harm_filt = [2, 6]
 
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
-axis_lim = [50, 1e3, 0, 60]
+axis_lim = [50, 1e3, 0, 70]
 
 #   Starting time from which to compute the spectra
 start_t = 10

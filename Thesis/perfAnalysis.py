@@ -16,15 +16,15 @@ plt.rc('lines', **{'linewidth': 2})
 # %%
 
 # path to directory containing the rpm sweep cases
-dir = '/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/h2b69/'
+dir = '/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/long_cyc_sweep/lowM/h2b/'
 
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.
-caseName = []
+caseName = ['h2b40','h2b42','h2b44','h2b50','h2b52','h2b54']
 
 # Set equal to "True" in order to plot the thrust/torque/rpm time series for each run. These plots are not saved but are
 # useful for determining the averaging interval to use for the thrust/torque profiles.
-plot_tseries = True
+plot_tseries = False
 plot_T_Q_profile = False
 plot_OASPL= False
 
@@ -191,10 +191,23 @@ for i, case in enumerate(cases):
             ax[2].grid()
 
 #%% Resolves measured loads and moments to the hub frame
+
 Mx_2 = (Fy_avg*np.cos(22.5*np.pi/180)+Fx_avg*np.sin(22.5*np.pi/180))*d
 My_2 = (Fx_avg * np.cos(22.5 * np.pi / 180) - Fy_avg * np.sin(22.5 * np.pi / 180)) * d
 Fx_2 = My_avg/d*np.cos(22.5*np.pi/180)+Mx_avg/d*np.sin(22.5*np.pi/180)
 Fy_2 = My_avg/d*np.sin(22.5*np.pi/180)+Mx_avg/d*np.cos(22.5*np.pi/180)
+
+print(f'rpm: {rpm_avg}')
+print(f'T: {T_avg}')
+print(f'Q: {Q_avg}')
+print(f'Fx: {Fx_2}')
+print(f'Fy: {Fy_2}')
+print(f'Mx: {Mx_2}')
+print(f'My: {My_2}')
+
+perf_quant = [rpm_avg,T_avg,Q_avg,Fx_2,Fy_2,Mx_2,My_2]
+perf_quant_avg = [np.mean(n) for n in perf_quant]
+perf_quant_std = [1.94*np.std(n)/np.sqrt(len(n)) for n in perf_quant]
 
 #%%
 

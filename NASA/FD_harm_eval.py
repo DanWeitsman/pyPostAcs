@@ -110,7 +110,7 @@ def harm_extract(xn, tac_ind, fs, rev_skip, harm_filt):
 
 #%%
 #   Directory of data files.
-dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/h2b69'
+dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/lat_cyc_sweep/lowM/h2b/h2b32'
 
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
 mics = [1,5,9]
