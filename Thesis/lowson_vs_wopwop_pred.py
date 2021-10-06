@@ -52,7 +52,7 @@ end_t = 15
 #%%
 lowson_dat = {}
 #   imports several performance quantities from the MainDict.h5 file.
-with h5py.File(os.path.join(dir,os.path.basename(os.path.dirname(dir))+'_lowson_LN_sdata.h5'),'r') as f:
+with h5py.File(os.path.join(dir,os.path.basename(os.path.dirname(dir))+'_form1a_LN_sdata.h5'),'r') as f:
     for k, dat in f.items():
         lowson_dat = {**lowson_dat,**{k:dat[()]}}
 
