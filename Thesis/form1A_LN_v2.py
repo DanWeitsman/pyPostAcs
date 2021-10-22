@@ -7,6 +7,8 @@ import sys
 sys.path.insert(0, '/Users/danielweitsman/Desktop/Masters_Research/py scripts/WOPWOP_PostProcess/pyWopwop')
 import matplotlib.colors as mcolors
 from scipy.interpolate import interp1d
+import scipy.optimize  as opt
+from time import process_time
 #%% Sets font parameters
 
 fontName = 'Times New Roman'
@@ -28,8 +30,9 @@ def eval_pressure(f):
     '''
 
     #   computes the pressure time series attributed to this quantity
-    p = 1 / (4 * np.pi * a0*r_mag_r *(1-Mr_r)**2) * f
-    p = np.trapz(p,x = geomParams['rdim'],axis =1)
+    p = 1 / (4 * np.pi * a0 ) * f
+    p = np.trapz(p,dx = dr,axis =1)
+    # p = np.sum(p,axis = 1)*dr
     # p=np.sum(p, axis=1) * dr
     #    subtract our the DC offset
     p_tot = p - np.expand_dims(np.mean(p, axis=1), axis=1)
@@ -39,8 +42,28 @@ def eval_pressure(f):
     p_tot = np.sum(p_tot,axis = 0)
     return p_tot
 
+def linterp_ind(ind,quant):
+    '''
+    This function linearly interpolates a quantity with the first three dimensions being [N_obs x N_r x N_psi] and having an arbitrary number of additional dimensions.
+    :param ind:  matrix of indicies at which to evaluate the quantitiy. It must have the same dimensions as "qunt".
+    :param quant: values of a quantity at every observer, radial position, and azimuthal angle. The remaining dimensions can be an arbitrary length.
+    :return:
+    :param y: linearly interpolated array having the same shape as "quant".
+    '''
+
+    dim_diff =len(np.shape(quant)) - len(np.shape(ind))
+    if dim_diff !=0 :
+        for i in range(dim_diff):
+            ind = np.expand_dims(ind,axis = len(np.shape(ind))+i)
+
+    x0 = np.floor(ind).astype(int)
+    x1 = np.ceil(ind).astype(int)
+    y0,y1 = list(map(lambda x: np.array([quant[m_ind,r_ind,x[m_ind,r_ind]] for r_ind in range(np.shape(quant)[1]) for m_ind in range(len(quant))]).reshape((np.shape(quant)),order = 'F'), [x0,x1]))
+    y = ((y0*(x1-ind)+y1*(ind-x0))/(x1-x0))
+    return y
+
 #%%
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_5deg_th1c/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
 mics = [5,16,-4]
 save_h5= True
 
@@ -62,31 +85,28 @@ with h5py.File(os.path.join(pred_dir, 'MainDict.h5'), "r") as f:
         UserIn={**UserIn,**{k:v[()]}}
 
 #%%
-# UserIn['thetamax'] = 90
+UserIn['rotation'] == 2
 loadParams['omega'] = loadParams['omega']*2*np.pi/60
 dphi = (UserIn['psimax']-UserIn['psimin'])/(UserIn['nbpsi']-1)*np.pi/180
 phi = (np.arange(-int(UserIn['nbpsi']/2),int(UserIn['nbpsi']/2)+1)*dphi)[::-1]
 x = np.array([UserIn['radius']*np.cos(phi)*np.cos(UserIn['thetamax']*np.pi/180),UserIn['radius']*np.cos(phi)*np.sin(UserIn['thetamax']*np.pi/180),UserIn['radius']*np.sin(phi)])
 
 #%%
-
+dr = (geomParams['R']-geomParams['e'])/(geomParams['nXsecs']-1)
+psi = (np.arange(361) * np.pi / 180)
 a0 = 340
-psi = (np.arange(361)*np.pi/180)
 dt = (loadParams['omega']/(2*np.pi))**-1/(len(psi)-1)
 ts = np.arange(len(psi))*dt
 
-if UserIn['rotation'] == 1:
-    y = np.array([np.expand_dims(geomParams['rdim'],axis = 1)*np.cos(psi),np.expand_dims(geomParams['rdim'],axis = 1)*np.sin(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
-else:
-    y = np.array([np.expand_dims(geomParams['rdim'],axis = 1)*np.cos(psi[::-1]),np.expand_dims(geomParams['rdim'],axis = 1)*np.sin(psi[::-1]),np.zeros((len(geomParams['rdim']),len(psi)))])
+if UserIn['rotation'] != 1:
+    psi = psi[::-1]
+
+y = np.array([np.expand_dims(geomParams['rdim'],axis = 1)*np.cos(psi),np.expand_dims(geomParams['rdim'],axis = 1)*np.sin(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 
 r = np.expand_dims(np.expand_dims(x.transpose(),axis = 2),axis = 3)-np.expand_dims(y,axis = 0)
 r_mag = np.linalg.norm(r, axis=1)
-t_ret = ts-r_mag/a0
-t_ret_ind = ((t_ret*loadParams['omega'])*180/np.pi)%360
 
 #%%
-dr = (geomParams['R']-geomParams['e'])/(geomParams['nXsecs']-1)
 
 if len(np.shape(loadParams['dFz2'])) ==1:
     Fz = np.expand_dims(loadParams['dFz'],axis = 1)*np.ones(len(psi)+1)
@@ -94,11 +114,8 @@ if len(np.shape(loadParams['dFz2'])) ==1:
 else:
     Fx = loadParams['dFx2'].transpose()
     Fz = loadParams['dFz2'].transpose()
-# Fx = dFx*np.cos(loadParams['th'][0])+dFz*np.sin(loadParams['th'][0])
-# Fz = -dFx*np.sin(loadParams['th'][0])+dFz*np.cos(loadParams['th'][0])
 
-# Fz_comp = np.trapz(Fz,x=geomParams['r'],axis = 0)
-# Fx_comp = np.trapz(Fx,x=geomParams['r'],axis = 0)
+
 if UserIn['rotation'] == 1:
     li = -np.array([Fx*np.sin(psi),-Fx*np.cos(psi),Fz])
 else:
@@ -108,11 +125,9 @@ dD_dt = np.gradient(Fx,axis = 1,edge_order = 2)/dt
 dT_dt = np.gradient(Fz,axis = 1,edge_order = 2)/dt
 
 if UserIn['rotation'] == 1:
-    li_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (-dD_dt * np.cos(psi) + Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
+    dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (-dD_dt * np.cos(psi) + Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
 else:
-    li_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (dD_dt * np.cos(psi) - Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
-
-# li_dt =  -np.array([Fx[:,:-1] * loadParams['omega'] * np.cos(psi), Fx[:,:-1] * loadParams['omega'] * np.sin(psi), np.zeros((len(geomParams['rdim']),len(psi)))])
+    dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (dD_dt * np.cos(psi) - Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
 
 #%%
 
@@ -122,29 +137,32 @@ if UserIn['rotation'] == 1:
 else:
     Mi = np.array([-M*np.sin(psi),-M*np.cos(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 
-Mr = np.sum(r*Mi,axis = 1)/r_mag
-
 if UserIn['rotation'] == 1:
     dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),-M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 else:
     dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 
-dMr_dt = np.sum(r*dMi_dt,axis = 1)/r_mag
+#%%
+
+x0 = ts-r_mag/a0
+ts_exp = (np.ones(np.shape(x0))*ts).flatten()
+start_t = process_time()
+f = lambda x: x - ts_exp + linterp_ind(quant=r_mag, ind= (x.reshape(np.shape(r_mag))* loadParams['omega'] * 180 / np.pi) % 360).flatten() / a0
+t_ret = opt.newton(func = f , x0 = x0.flatten()).reshape(np.shape(r_mag))
+# out2 = np.array([opt.newton(func = min_res , x0 = t.flatten(),args = [ts[i]]) for i,t in enumerate(x0)]).transpose().reshape(31,48,361)
+print(process_time() - start_t)
+t_ret_ind =(t_ret*loadParams['omega']*180/np.pi)%360
 
 #%%
-lr = np.sum(r*li,axis = 1)/r_mag
-dlr_dt = np.sum(r * li_dt, axis = 1)/r_mag
+Mr,dMr_dt,lr,dlr_dt = list(map(lambda f: np.sum(r * f, axis = 1)/r_mag, [Mi,dMi_dt,li,dli_dt]))
+r_r,Mr_r,dMr_dt_r,lr_r,dlr_dt_r= list(map(lambda f:linterp_ind(t_ret_ind,f), [r.transpose(0,2,3,1),Mr,dMr_dt,lr,dlr_dt]))
+r_r_mag =  np.linalg.norm(r_r, axis=-1)
 
 #%%
-# Mr_r,dMr_dt_r,lr_r, dlr_dt_r= list(map(lambda f: np.array([np.interp(x = m,xp=psi*180/np.pi,fp=f[i]) for i,m in enumerate(t_ret_ind)]),[Mr,dMr_dt,lr,dlr_dt]))
-
-Mr_r,dMr_dt_r,lr_r, dlr_dt_r,r_mag_r=list(map(lambda f: np.array([np.array([np.interp(xp=psi*180/np.pi,fp=f[m_itr,r_ind],x =tr[r_ind]) for r_ind in range(len(geomParams['rdim']))]) for m_itr,tr in enumerate(t_ret_ind)]),[Mr,dMr_dt,lr,dlr_dt,r_mag]))
-
-#%%
-term1 = dlr_dt_r
-term2 = lr_r/(1-Mr_r)*dMr_dt_r
+term1 = dlr_dt_r/(r_r_mag*(1-Mr_r)**2)
+term2 = lr_r/(r_r_mag*(1-Mr_r)**3)*dMr_dt_r
 p_term1, p_term2, p_tot = list(map(lambda quant: eval_pressure(quant),[term1,term2,term1+term2]))
-OASPL_term1, OASPL_term2, OASPL_tot = list(map(lambda quant: 10*np.log10(np.mean(quant**2,axis = 1)/20e-6**2),[p_term1, p_term2, p_tot]))
+OASPL_term1, OASPL_term2, OASPL_tot = list(map(lambda f: 10*np.log10(np.mean(f**2,axis = 1)/20e-6**2),[p_term1, p_term2, p_tot]))
 
 #%%
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list

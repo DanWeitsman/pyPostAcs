@@ -19,7 +19,7 @@ plt.rc('lines',**{'linewidth':2})
 
 
 #%%
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_5deg_th1c/'
 
 #   raw wopwop output file names
 file = ['pressure.h5']
@@ -37,7 +37,7 @@ leglab = ['Measured','Predicted']
 linestyle =['--','-.','-','-']
 
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
-mics = [1,9]
+mics = [12,-11]
 
 #   Frequency resolution of spectra [Hz]
 df_exp = 2

@@ -20,9 +20,9 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   directory containing the experimental data file.
-exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/trim_compare/e2b110/'
+exp_dir ='//Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/long_cyc_sweep/lowM/h2b/h2b56/'
 #   directory containing the prediction data file.
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/e2b110/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_5deg_th1c/'
 
 save_h5 = True
 #   raw wopwop output file names
@@ -32,7 +32,7 @@ file = ['pressure.h5']
 mics = [1,9]
 
 # min and max shaft order harmonics to exclude from the analysis (set max to -1 to include all upper order harmonics)
-harm_filt = [2, 6]
+harm_filt = [2, 10]
 
 #   Axis limits specified as: [xmin,xmax,ymin,ymax]
 axis_lim = [50, 1e3, 0, 60]

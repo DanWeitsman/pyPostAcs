@@ -28,8 +28,8 @@ def eval_pressure(f):
     '''
 
     #   computes the pressure time series attributed to this quantity
-    p = 1 / (4 * np.pi * a0*r_mag_r *(1-Mr_r)**2) * f
-    p = np.trapz(p,x = geomParams['rdim'],axis =1)
+    p = 1 / (4 * np.pi *r_r_mag* a0 ) * f
+    p = np.trapz(p,dx = dr,axis =1)
     # p=np.sum(p, axis=1) * dr
     #    subtract our the DC offset
     p_tot = p - np.expand_dims(np.mean(p, axis=1), axis=1)
@@ -40,7 +40,7 @@ def eval_pressure(f):
     return p_tot
 
 #%%
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_5deg_th1c/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
 mics = [5,16,-4]
 save_h5= True
 
@@ -62,7 +62,7 @@ with h5py.File(os.path.join(pred_dir, 'MainDict.h5'), "r") as f:
         UserIn={**UserIn,**{k:v[()]}}
 
 #%%
-# UserIn['thetamax'] = 90
+
 loadParams['omega'] = loadParams['omega']*2*np.pi/60
 dphi = (UserIn['psimax']-UserIn['psimin'])/(UserIn['nbpsi']-1)*np.pi/180
 phi = (np.arange(-int(UserIn['nbpsi']/2),int(UserIn['nbpsi']/2)+1)*dphi)[::-1]
@@ -70,12 +70,21 @@ x = np.array([UserIn['radius']*np.cos(phi)*np.cos(UserIn['thetamax']*np.pi/180),
 
 #%%
 
+surfNodes = geomParams['surfNodes'].reshape(geomParams['pntsPerXsec'],geomParams['nXsecs'],3,order = 'F')
+surfNorms = geomParams['surfNorms'].reshape(geomParams['pntsPerXsec'],geomParams['nXsecs'],3,order = 'F')
+
+y = np.array(np.expand_dims(surfNodes,axis = 3)*np.cos(psi),np.expand_dims(surfNodes,axis = 3)*np.sin(psi),)
+#%%
 a0 = 340
 psi = (np.arange(361)*np.pi/180)
 dt = (loadParams['omega']/(2*np.pi))**-1/(len(psi)-1)
 ts = np.arange(len(psi))*dt
 
 if UserIn['rotation'] == 1:
+    y = np.array((np.expand_dims(surfNodes[:, :, 1], axis=2) * np.cos(psi) + np.expand_dims(surfNodes[:, :, 0], axis=2) * np.sin(psi),
+        np.expand_dims(surfNodes[:, :, 0], axis=2) * np.cos(psi) + np.expand_dims(surfNodes[:, :, 1], axis=2) * np.sin(psi),
+                  np.expand_dims(surfNodes[:, :, -1], axis=2) * np.ones(len(psi))))
+
     y = np.array([np.expand_dims(geomParams['rdim'],axis = 1)*np.cos(psi),np.expand_dims(geomParams['rdim'],axis = 1)*np.sin(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 else:
     y = np.array([np.expand_dims(geomParams['rdim'],axis = 1)*np.cos(psi[::-1]),np.expand_dims(geomParams['rdim'],axis = 1)*np.sin(psi[::-1]),np.zeros((len(geomParams['rdim']),len(psi)))])
@@ -84,6 +93,9 @@ r = np.expand_dims(np.expand_dims(x.transpose(),axis = 2),axis = 3)-np.expand_di
 r_mag = np.linalg.norm(r, axis=1)
 t_ret = ts-r_mag/a0
 t_ret_ind = ((t_ret*loadParams['omega'])*180/np.pi)%360
+
+r_r= np.array([np.array([interp1d(x=psi*180/np.pi,y=r[m_itr,:,r_ind])(tr[r_ind]) for r_ind in range(len(geomParams['rdim']))]) for m_itr,tr in enumerate(t_ret_ind)]).transpose((0,2,1,3))
+r_r_mag =  np.linalg.norm(r_r, axis=1)
 
 #%%
 dr = (geomParams['R']-geomParams['e'])/(geomParams['nXsecs']-1)
@@ -108,9 +120,9 @@ dD_dt = np.gradient(Fx,axis = 1,edge_order = 2)/dt
 dT_dt = np.gradient(Fz,axis = 1,edge_order = 2)/dt
 
 if UserIn['rotation'] == 1:
-    li_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (-dD_dt * np.cos(psi) + Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
+    dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (-dD_dt * np.cos(psi) + Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
 else:
-    li_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (dD_dt * np.cos(psi) - Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
+    dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (dD_dt * np.cos(psi) - Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
 
 # li_dt =  -np.array([Fx[:,:-1] * loadParams['omega'] * np.cos(psi), Fx[:,:-1] * loadParams['omega'] * np.sin(psi), np.zeros((len(geomParams['rdim']),len(psi)))])
 
@@ -120,29 +132,29 @@ M = np.expand_dims(loadParams['omega']*geomParams['rdim']/a0,axis = 1)
 if UserIn['rotation'] == 1:
     Mi = np.array([-M*np.sin(psi),M*np.cos(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 else:
-    Mi = np.array([-M*np.sin(psi),-M*np.cos(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
-
-Mr = np.sum(r*Mi,axis = 1)/r_mag
+    Mi = np.array([-M*np.cos(psi),-M*np.cos(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 
 if UserIn['rotation'] == 1:
     dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),-M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 else:
     dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),len(psi)))])
 
-dMr_dt = np.sum(r*dMi_dt,axis = 1)/r_mag
+Mi_r,dMi_dt_r,li_r,dli_dt_r= list(map(lambda f: np.array([np.array([interp1d(x=psi*180/np.pi,y=f[:,r_ind,:])(tr[r_ind]) for r_ind in range(len(geomParams['rdim']))]) for m_itr,tr in enumerate(t_ret_ind)]).transpose((0,2,1,3)),[Mi,dMi_dt,li,dli_dt]))
+
 
 #%%
-lr = np.sum(r*li,axis = 1)/r_mag
-dlr_dt = np.sum(r * li_dt, axis = 1)/r_mag
+Mr_r = np.sum(r_r*Mi_r,axis = 1)/r_r_mag
+dMr_dt_r = np.sum(r_r*dMi_dt_r,axis = 1)/r_r_mag
+lr_r = np.sum(r_r*li_r,axis = 1)/r_r_mag
+dlr_dt_r = np.sum(r_r * dli_dt_r, axis = 1)/r_r_mag
 
 #%%
 # Mr_r,dMr_dt_r,lr_r, dlr_dt_r= list(map(lambda f: np.array([np.interp(x = m,xp=psi*180/np.pi,fp=f[i]) for i,m in enumerate(t_ret_ind)]),[Mr,dMr_dt,lr,dlr_dt]))
 
-Mr_r,dMr_dt_r,lr_r, dlr_dt_r,r_mag_r=list(map(lambda f: np.array([np.array([np.interp(xp=psi*180/np.pi,fp=f[m_itr,r_ind],x =tr[r_ind]) for r_ind in range(len(geomParams['rdim']))]) for m_itr,tr in enumerate(t_ret_ind)]),[Mr,dMr_dt,lr,dlr_dt,r_mag]))
 
 #%%
-term1 = dlr_dt_r
-term2 = lr_r/(1-Mr_r)*dMr_dt_r
+term1 = dlr_dt_r/((1-Mr_r)**2)
+term2 = lr_r/((1-Mr_r)**3)*dMr_dt_r
 p_term1, p_term2, p_tot = list(map(lambda quant: eval_pressure(quant),[term1,term2,term1+term2]))
 OASPL_term1, OASPL_term2, OASPL_tot = list(map(lambda quant: 10*np.log10(np.mean(quant**2,axis = 1)/20e-6**2),[p_term1, p_term2, p_tot]))
 

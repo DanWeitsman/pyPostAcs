@@ -79,9 +79,9 @@ t_ret_ind = (t_ret*loadParams['omega'])%(2*np.pi)*180/np.pi
 #%%
 dr = geomParams['R']/geomParams['nXsecs']
 
-if len(np.shape(loadParams['dFz'])) ==1:
-    dFz = np.expand_dims(loadParams['dFz'],axis = 1)*np.ones(len(psi)+1)
-    dFx = np.expand_dims(loadParams['dFx'],axis = 1)*np.ones(len(psi)+1)
+if len(np.shape(loadParams['dFz2'])) ==1:
+    dFz = np.expand_dims(loadParams['dFz2'],axis = 1)*np.ones(len(psi)+1)
+    dFx = np.expand_dims(loadParams['dFx2'],axis = 1)*np.ones(len(psi)+1)
 
 Fx = dFx*np.cos(loadParams['th'][0])+dFz*np.sin(loadParams['th'][0])
 Fz = -dFx*np.sin(loadParams['th'][0])+dFz*np.cos(loadParams['th'][0])
