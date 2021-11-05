@@ -9,6 +9,7 @@ import matplotlib.colors as mcolors
 from scipy.interpolate import interp1d
 import scipy.optimize  as opt
 from time import process_time
+import pyvista
 #%% Sets font parameters
 
 fontName = 'Times New Roman'
@@ -30,14 +31,16 @@ def eval_pressure(f):
     '''
 
     #   computes the pressure time series attributed to this quantity
-    p = (4*np.pi*a0*r_r_mag*(1-Mr_r)**2)**-1* f
-    p = np.trapz(p,dx = dr,axis =1)
-    # p = np.sum(f,axis = 1)*dr
+    p = np.trapz(np.trapz(f,x = np.insert(abs(np.diff(surfNodes[:,0,0],axis = -1)),24,np.diff(surfNodes[:,0,0])[-1]),axis = 1),x = geomParams['rdim'],axis =1)
+    # p = np.trapz(np.trapz(f,dx = np.mean(abs(np.diff(surfNodes[:,0,0]))),axis = 1),dx = dr,axis =1)
+
+    # p = np.sum(np.sum(p, axis=1), axis=1)*dc*dr
+    # p = np.sum(p,axis = 1)*dr
     # p=np.sum(p, axis=1) * dr
     #    subtract our the DC offset
     p_tot = p - np.expand_dims(np.mean(p, axis=1), axis=1)
     #   rearranges and appends an additional array, which accounts for the contributions from the remaining rotor blades.
-    p_tot = np.array([np.concatenate((p_tot[:,:-1][:, int(360 / UserIn['Nb']*Nb):], p_tot[:,:-1][:,:int(360 / UserIn['Nb']*Nb)]), axis=1) for Nb in range(UserIn['Nb'])])
+    p_tot = (4*np.pi)**-1*np.diff(np.array([np.concatenate((p_tot[:,:-1][:, int(360 / UserIn['Nb']*Nb):], p_tot[:,:-1][:,:int(360 / UserIn['Nb']*Nb)]), axis=1) for Nb in range(UserIn['Nb'])]),axis = -1)/dt
     #   sums contributions from each rotor blade to determine the total pressure time series.
     p_tot = np.sum(p_tot,axis = 0)
     return p_tot
@@ -52,18 +55,22 @@ def linterp_ind(ind,quant):
     '''
 
     dim_diff =len(np.shape(quant)) - len(np.shape(ind))
-    if dim_diff !=0 :
-        for i in range(dim_diff):
+    if dim_diff > 0 :
+        for i in range(abs(dim_diff)):
             ind = np.expand_dims(ind,axis = len(np.shape(ind))+i)
+    # elif dim_diff <0 :
+    #     for i in range(abs(dim_diff)):
+    #         print(len(np.shape(quant)))
+    #         quant = np.expand_dims(quant,axis = len(np.shape(quant)))
 
     x0 = np.floor(ind).astype(int)
     x1 = np.ceil(ind).astype(int)
-    y0,y1 = list(map(lambda x: np.array([quant[m_ind,r_ind,x[m_ind,r_ind]] for r_ind in range(np.shape(quant)[1]) for m_ind in range(len(quant))]).reshape((np.shape(quant)),order = 'F'), [x0,x1]))
+    y0,y1 = list(map(lambda x: np.array([quant[m_ind,c_ind,r_ind,x[m_ind,c_ind,r_ind]] for r_ind in range(np.shape(quant)[2]) for c_ind in range(np.shape(quant)[1]) for m_ind in range(len(quant))]).reshape((np.shape(quant)),order = 'F'), [x0,x1]))
     y = (y0*(x1-ind)+y1*(ind-x0))/(x1-x0)
     return y
 
 #%%
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_Fz/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_Fx/'
 mics = [5,16,-4]
 save_h5= True
 
@@ -92,9 +99,10 @@ phi = (np.arange(-int(UserIn['nbpsi']/2),int(UserIn['nbpsi']/2)+1)*dphi)[::-1]
 x = np.array([UserIn['radius']*np.cos(phi)*np.cos(UserIn['thetamax']*np.pi/180),UserIn['radius']*np.cos(phi)*np.sin(UserIn['thetamax']*np.pi/180),UserIn['radius']*np.sin(phi)])
 
 #%%
-
 psi_len =len(loadParams['phi'])
 dr = (geomParams['R']-geomParams['e'])/(geomParams['nXsecs']-1)
+dc = geomParams['chordDist'][0]/(geomParams['pntsPerXsec']/2-1)
+# np.diff(abs(surfNodes[:,0,0]))
 a0 = UserIn['c']
 dt = (loadParams['omega']/(2*np.pi))**-1/(psi_len-1)
 ts = np.arange(psi_len)*dt
@@ -105,42 +113,46 @@ else:
     psi = ((np.arange(psi_len)-180)%(psi_len-1))*np.pi/180
     # psi = ((np.arange(psi_len)[::-1] - 180) % (psi_len-1))*np.pi/180
 
-y = np.array([np.expand_dims(geomParams['liftLineCoord'][:,1],axis = -1)*np.cos(psi)+np.expand_dims(geomParams['liftLineCoord'][:,0],axis = -1)*np.sin(psi),np.expand_dims(geomParams['liftLineCoord'][:,1],axis = -1)*np.sin(psi)-np.expand_dims(geomParams['liftLineCoord'][:,0],axis = -1)*np.cos(psi),np.zeros((len(geomParams['rdim']),psi_len))])
+#%%
+surfNodes = geomParams['surfNodes'].reshape(geomParams['pntsPerXsec'],geomParams['nXsecs'],3,order = 'F')
+surfNorms = (geomParams['surfNorms']/np.expand_dims(np.linalg.norm(geomParams['surfNorms'],axis = 1),axis = 1)).reshape(geomParams['pntsPerXsec'],geomParams['nXsecs'],3,order = 'F')
 
-r = np.expand_dims(np.expand_dims(x.transpose(),axis = 2),axis = 3)-np.expand_dims(y,axis = 0)
+# surfNodes[:, :, 0] = -surfNodes[:, :, 0]
+# surfNorms[:, :, 0] = -surfNorms[:, :, 0]
+
+# mesh = pyvista.read('/Users/danielweitsman/Desktop/Masters_Research/lynx/lynx.vtk')
+# mesh = pyvista.PolyData(geomParams['surfNodes'])
+# mesh.compute_normals(inplace=True).plot()
+# pnts = mesh.points
+# mesh.points[:,0] = -mesh.points[:,0]
+# norms =mesh.point_normals
+# wrap = mesh.warp_by_scalar()
+# wrap.plot()
+surfNorms = np.array((np.expand_dims(surfNorms[:, :, 1], axis=-1) * np.cos(psi) + np.expand_dims(surfNorms[:, :, 0],axis=-1) * np.sin(psi),
+              np.expand_dims(-surfNorms[:, :, 0], axis=-1) * np.cos(psi) + np.expand_dims(surfNorms[:, :, 1], axis=-1) * np.sin(psi),
+              np.expand_dims(surfNorms[:, :, -1], axis=-1) * np.ones(len(psi))))
+
+y = np.array((np.expand_dims(surfNodes[:, :, 1], axis=2) * np.cos(psi) + np.expand_dims(surfNodes[:, :, 0],axis=2) * np.sin(psi),
+              np.expand_dims(-surfNodes[:, :, 0], axis=2) * np.cos(psi) + np.expand_dims(surfNodes[:, :, 1], axis=2) * np.sin(psi),
+              np.expand_dims(surfNodes[:, :, -1], axis=2) * np.ones(len(psi))))
+# y = np.array([np.expand_dims(geomParams['rdim'],axis = 1)*np.cos(psi),np.expand_dims(geomParams['rdim'],axis = 1)*np.sin(psi),np.zeros((len(geomParams['rdim']),psi_len))])
+
+r = np.expand_dims(np.expand_dims(np.expand_dims(x.transpose(),axis = 2),axis = 3),axis =4)-y
 r_mag = np.linalg.norm(r, axis=1)
 
 #%%
 
-if len(np.shape(loadParams['dFz'])) ==1:
-    Fz = np.expand_dims(loadParams['dFz'],axis = 1)*np.ones(psi_len+1)
-    Fx = np.expand_dims(loadParams['dFx'],axis = 1)*np.ones(psi_len+1)
-else:
-    # Fx = np.zeros(np.shape(loadParams['dFx'])).transpose()
-    Fx = loadParams['dFx'].transpose()
-    Fz = loadParams['dFz'].transpose()
+#try multiplying by r_mag to find v
+# v = loadParams['omega']*geomParams['rdim']
+v = loadParams['omega']*np.linalg.norm(y[:2,:,:,0],axis = 0)
+M = np.expand_dims(v/a0,axis =-1 )
+Mi = np.array([-M*np.sin(psi),M*np.cos(psi),np.zeros((geomParams['pntsPerXsec'],geomParams['nXsecs'],psi_len))])
 
-
-li = -np.array([Fx*np.sin(psi),-Fx*np.cos(psi),Fz])
-# li = -np.array([Fx * np.sin(psi), Fx * np.cos(psi), Fz])
-
-dD_dt = np.gradient(Fx,axis = 1,edge_order = 2)/dt
-dT_dt = np.gradient(Fz,axis = 1,edge_order = 2)/dt
-# dD_dt = np.insert(np.diff(Fx,axis = -1),-1,np.diff(Fx,axis = 1)[0])/dt
-# dT_dt = np.diff(Fz,axis = -1)/dt
-# dli_dt=np.insert(np.diff(li,axis = -1),360,np.diff(li,axis = -1)[:,:,0],axis = -1)/dt
-dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (-dD_dt * np.cos(psi) + Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
-#     dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (dD_dt * np.cos(psi) - Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
-
-#%%
-
-M = np.expand_dims(loadParams['omega']*np.linalg.norm(geomParams['liftLineCoord'][:,:2],axis = -1)/a0,axis = 1)
-Mi = np.array([-M*np.sin(psi),M*np.cos(psi),np.zeros((len(geomParams['rdim']),psi_len))])
-# Mi = np.array([-M*np.sin(psi),-M*np.cos(psi),np.zeros((len(geomParams['rdim']),psi_len))])
-
-dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),-M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),psi_len))])
-# dMi_dt=np.insert(np.diff(Mi,axis = -1),360,np.diff(Mi,axis = -1)[:,:,0],axis = -1)/dt
-# dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),psi_len))])
+# vn = np.sum(np.expand_dims(surfNorms.transpose(-1,0,1),axis = -1)*np.expand_dims(Mi*a0,axis = 1),axis = 0)
+# vn2 = np.sum(a0*M*surfNorms,axis = -1)
+# vn = np.sum(surfNorms*np.expand_dims(Mi,axis = 1)*a0,axis = 0)
+# vn = np.repeat(np.expand_dims(np.repeat(np.expand_dims(vn,axis = 0),31,axis = 0),axis = -1),361,axis = -1)
+vn = surfNorms[1,:,:,0]*v
 
 #%%
 
@@ -154,24 +166,27 @@ print(process_time() - start_t)
 t_ret_ind =(t_ret*loadParams['omega']*180/np.pi)%360
 
 #%%
-# r_r = linterp_ind(t_ret_ind,r.transpose(0,2,3,1))
+# r_r,Mi_r = linterp_ind(t_ret_ind,r.transpose(0,2,3,4,1))
 # r_r_mag =  np.linalg.norm(r_r, axis=-1)
-# Mi_r,dMi_dt_r,li_r,dli_dt_r = list(map(lambda f: linterp_ind(t_ret_ind,np.repeat(np.expand_dims(f.transpose(1,2,0),axis = 0),axis = 0,repeats=31)), [Mi,dMi_dt,li,dli_dt]))
-# Mr_r,dMr_dt_r,lr_r,dlr_dt_r = list(map(lambda f: np.sum(r_r/np.expand_dims(r_r_mag,axis = -1) * f, axis = -1), [Mi_r,dMi_dt_r,li_r,dli_dt_r]))
+#
+r_r,Mi_r = list(map(lambda f: linterp_ind(t_ret_ind,f), [r.transpose(0,2,3,4,1),np.repeat(np.expand_dims(Mi,axis = 0),31,axis = 0).transpose(0,2,3,4,1)]))
+r_r_mag =  np.linalg.norm(r_r, axis=-1)
+Mr_r = np.sum(r_r * Mi_r, axis = -1)/r_r_mag
+
 
 #%%
-Mr,dMr_dt,lr,dlr_dt = list(map(lambda f: np.sum(r * f, axis = 1)/r_mag, [Mi,dMi_dt,li,dli_dt]))
-r_r,Mr_r,dMr_dt_r,lr_r,dlr_dt_r= list(map(lambda f:linterp_ind(t_ret_ind,f), [r.transpose(0,2,3,1),Mr,dMr_dt,lr,dlr_dt]))
+Mr =np.sum(r * np.expand_dims(Mi,axis = 0), axis = 1)/r_mag
+# vn_r=linterp_ind(t_ret_ind,np.expand_dims(np.expand_dims(vn, axis = 0),axis = -1))
+# r_r,Mr_r,vn_r= list(map(lambda f:linterp_ind(t_ret_ind,f), [r.transpose(0,2,3,4,1),Mr,vn]))
+r_r,Mr_r= list(map(lambda f:linterp_ind(t_ret_ind,f), [r.transpose(0,2,3,4,1),Mr]))
+
+# r_r,Mr_r,vn_r= list(map(lambda f:linterp_ind(t_ret_ind,f), [r.transpose(0,2,3,4,1),Mr,np.repeat(np.expand_dims(vn,axis = 0),len(t_ret_ind),axis = 0)]))
 r_r_mag =  np.linalg.norm(r_r, axis=-1)
 
 #%%
-# term1 = dlr_dt_r/(r_r_mag*(1-Mr_r)**2)
-term1 = dlr_dt_r
-term2 = lr_r/(1-Mr_r)*dMr_dt_r
-term3 = (lr_r/r_r_mag+lr_r*(Mr_r-M**2)/(r_r_mag*(1-Mr_r)))*a0
-
-p_term1, p_term2,p_term3, p_tot = list(map(lambda quant: eval_pressure(quant),[term1,term2,term3,term1+term2+term3]))
-OASPL_term1, OASPL_term2,OASPL_term3, OASPL_tot = list(map(lambda f: 10*np.log10(np.mean(f**2,axis = 1)/20e-6**2),[p_term1, p_term2,p_term3, p_tot]))
+p = eval_pressure(UserIn['rho']*np.expand_dims(np.expand_dims(vn,axis = 0),axis = -1)/(r_r_mag*(1-Mr_r)))
+# p = eval_pressure(UserIn['rho']*vn/(r_r_mag*(1-Mr_r)))
+OASPL = 10*np.log10(np.mean(p**2,axis = 1)/20e-6**2)
 
 #%%
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
@@ -183,41 +198,9 @@ plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
 for i,m in enumerate(mics):
 #   Plots the resulting spectra in dB
         if len(mics)>1:
-            ax[i].plot(ts[:-1]/(dt*360), p_term1[m-1])
-            ax[i].plot(ts[:-1]/(dt*360), p_term2[m-1])
-            ax[i].plot(ts[:-1]/(dt*360), p_term3[m-1])
-            ax[i].plot(ts[:-1]/(dt*360), p_tot[m-1])
+            ax[i].plot(ts[:-2]/(dt*360), p[m-1])
         else:
-            ax.plot(ts[:-1]/(dt*360), p_term1[m-1])
-            ax.plot(ts[:-1]/(dt*360), p_term2[m-1])
-            ax.plot(ts[:-1]/(dt*360), p_ter3[m-1])
-            ax.plot(ts[:-1]/(dt*360), p_tot[m-1])
-
-for i, m in enumerate(mics):
-    ax[i].set_title(f'$Mic\ {m} \ ( \phi = {round(phi[m-1]*180/np.pi)}^\circ)$')
-    if i!=len(mics)-1:
-        ax[i].tick_params(axis='x', labelsize=0)
-    ax[i].set_xlim([0,1])
-    # ax[i].set_ylim([-0.015,0.015])
-    ax[i].grid('on')
-
-ax[int(len(mics)/2)].set_ylabel('Pressure [Pa]')
-ax[- 1].set_xlabel('Roatation')
-ax[-1].legend(['$\partial l_r/\partial t$','$l_r(1-M_r)^{-1}(\partial M_r/\partial t)$','Near-Field','$\partial l_r/\partial t+l_r(1-M_r)^{-1}(\partial M_r/\partial t)$'], ncol=3,loc='center',bbox_to_anchor=(0.5, -0.55))
-
-#%%
-#   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
-fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
-#   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
-plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
-
-#   Loops through each mic
-for i,m in enumerate(mics):
-#   Plots the resulting spectra in dB
-        if len(mics)>1:
-            ax[i].plot(ts[:-1]/(dt*360), p_tot[m-1])
-        else:
-            ax.plot(ts[:-1]/(dt*360), p_tot[m-1])
+            ax.plot(ts[:-1]/(dt*360), p[m-1])
 
 for i, m in enumerate(mics):
     ax[i].set_title(f'$Mic\ {m} \ ( \phi = {round(phi[m-1]*180/np.pi)}^\circ)$')
@@ -234,27 +217,24 @@ ax[- 1].set_xlabel('Roatation')
 #%%
 
 fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5),subplot_kw=dict(polar=True))
-ax.plot(phi , OASPL_term1)
-ax.plot(phi , OASPL_term2)
-ax.plot(phi , OASPL_term3)
-ax.plot(phi , OASPL_tot)
+ax.plot(phi , OASPL)
 ax.set_thetamax(phi[0]*180/np.pi+2)
 ax.set_thetamin(phi[-1]*180/np.pi-2)
 ax.set_ylim([0,60])
 ax.set_ylabel(' OASPL (dB, re:20$\mu$Pa)',position = (1,.25),  labelpad = -20, rotation = phi[-1]*180/np.pi-3)
 # ax.legend(['Measured','Predicted'], ncol=1,loc='center',bbox_to_anchor=(.25, 0.9))
-ax.legend(['$\partial l_r/\partial t$','$l_r(1-M_r)^{-1}(\partial M_r/\partial t)$','Near Field','$\partial l_r/\partial t+l_r(1-M_r)^{-1}(\partial M_r/\partial t)$'], ncol=1,loc='center',bbox_to_anchor=(-.115, 0.9))
+# ax.legend(['$\partial l_r/\partial t$','$l_r(1-M_r)^{-1}(\partial M_r/\partial t)$','$\partial l_r/\partial t+l_r(1-M_r)^{-1}(\partial M_r/\partial t)$'], ncol=1,loc='center',bbox_to_anchor=(-.115, 0.9))
 
 #%%
 # Saves the data to a new h5 file, which could later be referenced tp compare the thrust/torque profiles of different
 # rotor configurations.
 if save_h5:
-    sdata = {'phi':phi,'dt':dt,'x':x,'y':y,'r':r,'ts':ts,'tr':t_ret,'tr_ind':t_ret_ind,'Mr_r':Mr_r,'dMr_dt_r':dMr_dt_r,'lr_r':lr_r,'dlr_dt_r':dlr_dt_r,'term1':term1,'term2':term2,'p_total':p_tot,'OASPL_term1':OASPL_term1,'OASPL_term2':OASPL_term2,'OASPL_tot':OASPL_tot}
+    sdata = {'phi':phi,'dt':dt,'x':x,'y':y,'r':r,'ts':ts,'tr':t_ret,'tr_ind':t_ret_ind,'r_r':r_r,'Mr_r':Mr_r,'vn':vn,'p':p,'OASPL':OASPL}
 
-    if os.path.exists(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_form1a_LN_sdata.h5')):
-        os.remove(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_form1a_LN_sdata.h5'))
+    if os.path.exists(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_form1a_TN_sdata.h5')):
+        os.remove(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_form1a_TN_sdata.h5'))
 
-    with h5py.File(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_form1a_LN_sdata.h5'), 'a') as h5_f:
+    with h5py.File(os.path.join(os.path.dirname(pred_dir), os.path.basename(os.path.dirname(pred_dir)) + '_form1a_TN_sdata.h5'), 'a') as h5_f:
         for k, dat in sdata.items():
             h5_f.create_dataset(k, shape=np.shape(dat), data=dat)
 
@@ -274,12 +254,7 @@ if save_h5:
 fig,ax = plt.subplots(1,1,figsize = (8,6))
 #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
 plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
-ax.plot(psi,r_r_mag[5,30])
-# ax.plot(psi[:-1],dlr_dt_r[5,30])
-# ax.plot(psi,t_ret_ind[5,30])
-
-# ax.plot(psi[:-1],p_tot2[0,5])
-# ax.plot(psi[:-1],p_tot2[1,5])
+ax.plot(psi*180/np.pi,Mr[-5,10,-1,:])
 
 #%%
 # #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
@@ -293,3 +268,18 @@ ax.plot(psi,r_r_mag[5,30])
 # #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
 # plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
 # ax.plot(psi,np.diff(Fz[30]))
+#%%
+# pnts = surfNodes.reshape(np.shape(geomParams['surfNodes']),order = 'F')
+# norms = surfNorms.reshape(np.shape(geomParams['surfNodes']),order = 'F')
+# pnts[:,0] = -surfNodes_temp[:,0]
+# surfNorms_temp[:,0] = -surfNorms_temp[:,0]
+scale = .001
+fig = plt.figure()
+ax = fig.gca(projection = '3d')
+ax.auto_scale_xyz([-2, 2], [10, 60], [-1, 1])
+ax.pbaspect = [.09, 1, .05]
+ax.set(xlabel = 'x',ylabel = 'y',zlabel = 'z')
+ax.scatter3D(geomParams['surfNodes'][:,0], geomParams['surfNodes'][:,1], geomParams['surfNodes'][:,2],c = 'red',linewidths = 1)
+ax.quiver(geomParams['surfNodes'][:,0], geomParams['surfNodes'][:,1], geomParams['surfNodes'][:,2],geomParams['surfNorms'][:,0]*scale, geomParams['surfNorms'][:,1]*scale, geomParams['surfNorms'][:,2]*scale)
+
+# # fig.show()

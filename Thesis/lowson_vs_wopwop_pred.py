@@ -19,7 +19,7 @@ plt.rc('lines',**{'linewidth':2})
 
 
 #%%
-dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
+dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_Fz/'
 
 #   raw wopwop output file names
 file = ['pressure.h5']
@@ -50,11 +50,15 @@ start_t = 10
 end_t = 15
 
 #%%
-lowson_dat = {}
+form1a_LN = {}
+form1a_TN = {}
 #   imports several performance quantities from the MainDict.h5 file.
 with h5py.File(os.path.join(dir,os.path.basename(os.path.dirname(dir))+'_form1a_LN_sdata.h5'),'r') as f:
     for k, dat in f.items():
-        lowson_dat = {**lowson_dat,**{k:dat[()]}}
+        form1a_LN = {**form1a_LN, **{k:dat[()]}}
+with h5py.File(os.path.join(dir,os.path.basename(os.path.dirname(dir))+'_form1a_TN_sdata.h5'),'r') as f:
+    for k, dat in f.items():
+        form1a_TN = {**form1a_TN, **{k:dat[()]}}
 
 #%%
 
@@ -104,11 +108,11 @@ plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
 for i,m in enumerate(mics):
 #   Plots the resulting spectra in dB
         if len(mics)>1:
-            ax[i].plot(lowson_dat['ts'][:-1]/(lowson_dat['dt']*360), lowson_dat['p_total'][m-1])
+            ax[i].plot(form1a_LN['ts'][:-1] / (form1a_LN['dt'] * 360), form1a_LN['p_total'][m - 1])
             ax[i].plot(wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :, 0]/(omega/60)**-1, wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :,  2])
 
         else:
-            ax.plot(lowson_dat['ts'][:-1]/(lowson_dat['dt']*360), lowson_dat['p_total'][m-1])
+            ax.plot(form1a_LN['ts'][:-1] / (form1a_LN['dt'] * 360), form1a_LN['p_total'][m - 1])
             ax.plot(wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :, 0]/(omega/60)**-1, wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :,  2])
 
 for i, m in enumerate(mics):
@@ -121,16 +125,57 @@ for i, m in enumerate(mics):
 
 ax[int(len(mics)/2)].set_ylabel('Pressure [Pa]')
 ax[- 1].set_xlabel('Roatation')
-ax[-1].legend(["Form1A",'WOPWOP'], ncol=2,loc='center',bbox_to_anchor=(0.5, -0.55))
+ax[-1].legend(["MY-WOPWOP",'PSU-WOPWOP'], ncol=2,loc='center',bbox_to_anchor=(0.5, -0.55))
+plt.suptitle('Loading Noise')
 
+#%%
+#   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
+fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
+#   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
+plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
 
+#   Loops through each mic
+for i,m in enumerate(mics):
+#   Plots the resulting spectra in dB
+        if len(mics)>1:
+            ax[i].plot(form1a_LN['ts'][:-1] / (form1a_TN['dt'] * 360), form1a_TN['p'][m - 1])
+            ax[i].plot(wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :, 0]/(omega/60)**-1, wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :,  1])
+
+        else:
+            ax.plot(form1a_LN['ts'][:-1] / (form1a_TN['dt'] * 360), form1a_TN['p'][m - 1])
+            ax.plot(wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :, 0]/(omega/60)**-1, wopwop_dat[list(wopwop_dat.keys())[0]]['pressure']['function_values'][0, m - 1, :,  1])
+
+for i, m in enumerate(mics):
+    ax[i].set_title(f'$Mic\ {m} \ ( \phi = {round(phi[m-1])}^\circ)$')
+    if i!=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    ax[i].set_xlim([0,1])
+    # ax[i].set_ylim([-0.015,0.015])
+    ax[i].grid('on')
+
+ax[int(len(mics)/2)].set_ylabel('Pressure [Pa]')
+ax[- 1].set_xlabel('Roatation')
+ax[-1].legend(["MY-WOPWOP",'PSU-WOPWOP'], ncol=2,loc='center',bbox_to_anchor=(0.5, -0.55))
+plt.suptitle('Thickness Noise')
 #%%
 
 fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5),subplot_kw=dict(polar=True))
-ax.plot(lowson_dat['phi'], lowson_dat['OASPL_tot'])
+ax.plot(form1a_LN['phi'], form1a_LN['OASPL_tot'])
 ax.plot(phi*np.pi/180, np.squeeze(OASPL_pred)[:,1])
 ax.set_thetamax(phi[0]+2)
 ax.set_thetamin(phi[-1]-2)
 ax.set_ylim([0,70])
 ax.set_ylabel(' OASPL (dB, re:20$\mu$Pa)',position = (1,.25),  labelpad = -20, rotation = phi[-1]-3)
-ax.legend(["Form1A",'WOPWOP'], ncol=1,loc='center',bbox_to_anchor=(-0.05, 0.9))
+ax.legend(["MY-WOPWOP",'PSU-WOPWOP'], ncol=1,loc='center',bbox_to_anchor=(-0.05, 0.9))
+plt.title('Loading Noise')
+
+#%%
+fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5),subplot_kw=dict(polar=True))
+ax.plot(form1a_TN['phi'], form1a_TN['oaspl_tot'])
+ax.plot(phi*np.pi/180, np.squeeze(OASPL_pred)[:,0])
+ax.set_thetamax(phi[0]+2)
+ax.set_thetamin(phi[-1]-2)
+ax.set_ylim([0,70])
+ax.set_ylabel(' OASPL (dB, re:20$\mu$Pa)',position = (1,.25),  labelpad = -20, rotation = phi[-1]-3)
+ax.legend(["MY-WOPWOP",'PSU-WOPWOP'], ncol=1,loc='center',bbox_to_anchor=(-0.05, 0.9))
+plt.title('Thickness Noise')
