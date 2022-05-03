@@ -20,9 +20,9 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   directory containing the experimental data file.
-exp_dir ='//Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/long_cyc_sweep/lowM/h2b/h2b56/'
+exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/rpm_sweep/h2b/h2b8'
 #   directory containing the prediction data file.
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_5deg_th1c/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b8_rgrid/'
 
 save_h5 = True
 #   raw wopwop output file names
@@ -64,8 +64,8 @@ with h5py.File(os.path.join(pred_dir, 'MainDict.h5'), "r") as f:
 
 #%% Spherical spreading correction
 
-micR = np.array([65.19,62.97,61.34,60.34,60.00,60.34,61.34,62.97,65.19,67.93,71.14,74.75])
-exp = exp * micR / micR[4]
+# micR = np.array([65.19,62.97,61.34,60.34,60.00,60.34,61.34,62.97,65.19,67.93,71.14,74.75])
+# exp = exp * micR / micR[4]
 
 #%% Sync average experimental measurements
 
@@ -274,4 +274,6 @@ ax[0].set_title('Prediction')
 ax[1].set_title('Measurement')
 ax[-1].set_xlabel('Rotation')
 ax[-1].legend([f'$Mic\ {mics[0]} \ ( \phi = {round(phi[mics[0] - 1])}^\circ)$',f'$Mic\ {mics[-1]} \ ( \phi = {round(phi[mics[-1] - 1])}^\circ)$'], loc='center', ncol=3,bbox_to_anchor=(.5, -.35))
+
+#%%
 

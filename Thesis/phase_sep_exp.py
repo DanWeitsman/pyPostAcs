@@ -10,7 +10,7 @@ from bisect import bisect
 #%% Sets font parameters
 
 fontName = 'Times New Roman'
-fontSize = 12
+fontSize = 16
 plt.rc('font',**{'family':'serif','serif':[fontName],'size':fontSize})
 plt.rc('mathtext',**{'default':'regular'})
 plt.rc('text',**{'usetex':False})
@@ -19,9 +19,9 @@ plt.rc('lines',**{'linewidth':2})
 
 #%%
 #   Parent directory where all of the data files are contained.
-exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/trim_compare/e2b109'
+exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/rpm_sweep/h2b/h2b8'
 
-save_h5 = True
+save_h5 = False
 #   Mic #'s that you want to plot and compare. A subplot will be generated for each mic.
 mics = [1,9]
 
@@ -46,8 +46,8 @@ with h5py.File(os.path.join(exp_dir, 'acs_data.h5'), 'r') as dat_file:
 
 #%% Spherical spreading correction
 
-micR = np.array([65.19,62.97,61.34,60.34,60.00,60.34,61.34,62.97,65.19,67.93,71.14,74.75])
-exp = exp * micR / micR[4]
+# micR = np.array([65.19,62.97,61.34,60.34,60.00,60.34,61.34,62.97,65.19,67.93,71.14,74.75])
+# exp = exp * micR / micR[4]
 
 #%%
 # Xm = fft(exp[int(fs_exp*start_t):int(fs_exp*end_t),mics[0]-1]) * fs_exp ** -1
@@ -132,7 +132,7 @@ Gxx_outph = fun.SD(Xm_outph,fs1)
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
 #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
-plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
+plt.subplots_adjust(hspace = 0.25,bottom = 0.16)
 
 #   Loops through each mic
 for i,m in enumerate(mics):
@@ -147,21 +147,53 @@ for i,m in enumerate(mics):
     ax[i].set_ylabel('Pressure [Pa]')
     ax[i].grid('on')
 
-ax[len(mics) - 1].set_xlabel('Time [sec]')
-ax[len(mics) - 1].legend(['In-phase', 'Out-of-phase', 'Total'], loc='center', ncol=3,bbox_to_anchor=(.5, -.35))
+ax[len(mics) - 1].set_xlabel('Rotation')
+ax[len(mics) - 1].legend(['In-phase', 'Out-of-phase', 'Total'], loc='center', ncol=3,bbox_to_anchor=(.5, -.4))
+plt.savefig(os.path.join(exp_dir,'rel_tseries.png'),format = 'png')
+plt.savefig(os.path.join(exp_dir,'rel_tseries.eps'),format = 'eps')
 
  #%% Plots predicted spectrum
 
+# #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
+# fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
+# #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
+# plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
+#
+# #   Loops through each mic
+# for i,m in enumerate(mics):
+#     ax[i].stem(BPF_harm, 10*np.log10(Gxx_inph*df/20e-6**2),linefmt =f'C{0}{":"}', markerfmt =f'C{0}o',basefmt=f'C{0}')
+#     ax[i].stem(BPF_harm, 10*np.log10(Gxx_outph[:, m - 1]*df/20e-6**2),linefmt =f'C{1}{"-."}', markerfmt =f'C{1}o',basefmt=f'C{1}')
+#     ax[i].stem(BPF_harm, spl[:, m - 1], linefmt =f'C{2}{"-"}', markerfmt =f'C{2}o', basefmt=f'C{2}')
+#
+#     ax[i].set_title(f'Mic {m}')
+#     if i!=len(mics)-1:
+#         ax[i].tick_params(axis='x', labelsize=0)
+#     # ax[ii].set_xscale('log')
+#     ax[i].axis([0, 4, axis_lim[2], axis_lim[-1]])
+#     ax[i].set_xticks(np.arange(1, 5))
+#     # ax[i].set_xlim([0,harm_filt[-1]/Nb+1])
+#     ax[i].grid('on')
+#     ax[i].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+#
+# ax[len(mics) - 1].set_xlabel('BPF Harmonic')
+# ax[int((len(mics) - 1)/2)].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
+# ax[len(mics) - 1].legend(['In-phase', 'Out-of-phase', 'Total'],loc='center',ncol = 4, bbox_to_anchor=(.5, -.35))
+# plt.savefig(os.path.join(exp_dir,'rel_spec.png'),format = 'png')
+
+#%%
+width = .125
+hatch = ['/', '|', '-', '+', 'x', 'o', 'O', '.', '*']
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 fig,ax = plt.subplots(len(mics),1,figsize = (8,6))
 #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
-plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
+plt.subplots_adjust(hspace = 0.25,bottom = 0.16)
 
 #   Loops through each mic
 for i,m in enumerate(mics):
-    ax[i].stem(BPF_harm, 10*np.log10(Gxx_inph*df/20e-6**2),linefmt =f'C{0}{":"}', markerfmt =f'C{0}o',basefmt=f'C{0}')
-    ax[i].stem(BPF_harm, 10*np.log10(Gxx_outph[:, m - 1]*df/20e-6**2),linefmt =f'C{1}{"-."}', markerfmt =f'C{1}o',basefmt=f'C{1}')
-    ax[i].stem(BPF_harm, spl[:, m - 1], linefmt =f'C{2}{"-"}', markerfmt =f'C{2}o', basefmt=f'C{2}')
+    #   Plots the resulting spectra in dB
+    ax[i].bar(BPF_harm[::2][1:4]+width*0-width, 10*np.log10(Gxx_inph[::2][1:4]*df/20e-6**2),width = width,hatch =hatch[0]*2,align='center')
+    ax[i].bar(BPF_harm[::2][1:4]+width*1-width, 10*np.log10(Gxx_outph[::2, m - 1][1:4]*df/20e-6**2),width = width,hatch =hatch[1]*2,align='center')
+    ax[i].bar(BPF_harm[::2][1:4]+width*2-width, spl[::2, m - 1][1:4],width = width,hatch =hatch[2]*2,align='center')
 
     ax[i].set_title(f'Mic {m}')
     if i!=len(mics)-1:
@@ -175,7 +207,9 @@ for i,m in enumerate(mics):
 
 ax[len(mics) - 1].set_xlabel('BPF Harmonic')
 ax[int((len(mics) - 1)/2)].set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
-ax[len(mics) - 1].legend(['In-phase', 'Out-of-phase', 'Total'],loc='center',ncol = 4, bbox_to_anchor=(.5, -.35))
+ax[len(mics) - 1].legend(['In-phase', 'Out-of-phase', 'Total'],loc='center',ncol = 4, bbox_to_anchor=(.5, -.4))
+plt.savefig(os.path.join(exp_dir,'rel_spec.png'),format = 'png')
+plt.savefig(os.path.join(exp_dir,'rel_spec.eps'),format = 'eps')
 
 #%%
 # Saves the data to a new h5 file, which could later be referenced tp compare the thrust/torque profiles of different

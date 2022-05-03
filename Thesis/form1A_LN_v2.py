@@ -63,7 +63,7 @@ def linterp_ind(ind,quant):
     return y
 
 #%%
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_Fz/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_CW/'
 mics = [5,16,-4]
 save_h5= True
 
@@ -126,21 +126,18 @@ li = -np.array([Fx*np.sin(psi),-Fx*np.cos(psi),Fz])
 
 dD_dt = np.gradient(Fx,axis = 1,edge_order = 2)/dt
 dT_dt = np.gradient(Fz,axis = 1,edge_order = 2)/dt
-# dD_dt = np.insert(np.diff(Fx,axis = -1),-1,np.diff(Fx,axis = 1)[0])/dt
+# dT_dt =  np.insert(np.diff(Fz,axis = -1),-1,np.diff(Fz,axis = 1)[:,0],axis = -1)/dt
+# dD_dt =  np.insert(np.diff(Fx,axis = -1),-1,np.diff(Fx,axis = 1)[:,0],axis = -1)/dt
 # dT_dt = np.diff(Fz,axis = -1)/dt
 # dli_dt=np.insert(np.diff(li,axis = -1),360,np.diff(li,axis = -1)[:,:,0],axis = -1)/dt
 dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (-dD_dt * np.cos(psi) + Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
 #     dli_dt =  -np.array([(dD_dt * np.sin(psi) + Fx * loadParams['omega'] * np.cos(psi)), (dD_dt * np.cos(psi) - Fx * loadParams['omega'] * np.sin(psi)), dT_dt])
 
 #%%
-
 M = np.expand_dims(loadParams['omega']*np.linalg.norm(geomParams['liftLineCoord'][:,:2],axis = -1)/a0,axis = 1)
 Mi = np.array([-M*np.sin(psi),M*np.cos(psi),np.zeros((len(geomParams['rdim']),psi_len))])
-# Mi = np.array([-M*np.sin(psi),-M*np.cos(psi),np.zeros((len(geomParams['rdim']),psi_len))])
 
 dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),-M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),psi_len))])
-# dMi_dt=np.insert(np.diff(Mi,axis = -1),360,np.diff(Mi,axis = -1)[:,:,0],axis = -1)/dt
-# dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),M*loadParams['omega']*np.sin(psi),np.zeros((len(geomParams['rdim']),psi_len))])
 
 #%%
 
@@ -190,7 +187,7 @@ for i,m in enumerate(mics):
         else:
             ax.plot(ts[:-1]/(dt*360), p_term1[m-1])
             ax.plot(ts[:-1]/(dt*360), p_term2[m-1])
-            ax.plot(ts[:-1]/(dt*360), p_ter3[m-1])
+            ax.plot(ts[:-1]/(dt*360), p_term3[m-1])
             ax.plot(ts[:-1]/(dt*360), p_tot[m-1])
 
 for i, m in enumerate(mics):
@@ -203,7 +200,8 @@ for i, m in enumerate(mics):
 
 ax[int(len(mics)/2)].set_ylabel('Pressure [Pa]')
 ax[- 1].set_xlabel('Roatation')
-ax[-1].legend(['$\partial l_r/\partial t$','$l_r(1-M_r)^{-1}(\partial M_r/\partial t)$','Near-Field','$\partial l_r/\partial t+l_r(1-M_r)^{-1}(\partial M_r/\partial t)$'], ncol=3,loc='center',bbox_to_anchor=(0.5, -0.55))
+ax[-1].legend(['Far-field unsteady','Far-field steady','Near-field','Total'], ncol=4,loc='center',bbox_to_anchor=(0.5, -0.55))
+# ax[-1].legend(['$\partial l_r/\partial t$','$l_r(1-M_r)^{-1}(\partial M_r/\partial t)$','Near-Field','$\partial l_r/\partial t+l_r(1-M_r)^{-1}(\partial M_r/\partial t)$'], ncol=3,loc='center',bbox_to_anchor=(0.5, -0.55))
 
 #%%
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
@@ -243,7 +241,8 @@ ax.set_thetamin(phi[-1]*180/np.pi-2)
 ax.set_ylim([0,60])
 ax.set_ylabel(' OASPL (dB, re:20$\mu$Pa)',position = (1,.25),  labelpad = -20, rotation = phi[-1]*180/np.pi-3)
 # ax.legend(['Measured','Predicted'], ncol=1,loc='center',bbox_to_anchor=(.25, 0.9))
-ax.legend(['$\partial l_r/\partial t$','$l_r(1-M_r)^{-1}(\partial M_r/\partial t)$','Near Field','$\partial l_r/\partial t+l_r(1-M_r)^{-1}(\partial M_r/\partial t)$'], ncol=1,loc='center',bbox_to_anchor=(-.115, 0.9))
+# ax.legend(['$\partial l_r/\partial t$','$l_r(1-M_r)^{-1}(\partial M_r/\partial t)$','Near Field','$\partial l_r/\partial t+l_r(1-M_r)^{-1}(\partial M_r/\partial t)$'], ncol=1,loc='center',bbox_to_anchor=(-.115, 0.9))
+ax.legend(['Far-field unsteady','Far-field steady','Near-field','Total'], ncol=1,loc='center',bbox_to_anchor=(-.115, 0.9))
 
 #%%
 # Saves the data to a new h5 file, which could later be referenced tp compare the thrust/torque profiles of different
@@ -271,22 +270,22 @@ if save_h5:
 
 #%%
   # Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
-fig,ax = plt.subplots(1,1,figsize = (8,6))
-#   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
-plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
-ax.plot(psi,r_r_mag[5,30])
-# ax.plot(psi[:-1],dlr_dt_r[5,30])
+# fig,ax = plt.subplots(1,1,figsize = (8,6))
+# #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
+# plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
+# ax.plot(psi,r_r_mag[5,30])
+# # ax.plot(psi[:-1],dlr_dt_r[5,30])
 # ax.plot(psi,t_ret_ind[5,30])
 
 # ax.plot(psi[:-1],p_tot2[0,5])
 # ax.plot(psi[:-1],p_tot2[1,5])
 
 #%%
-# #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
+#   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 # fig,ax = plt.subplots(1,1,figsize = (8,6))
 # #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
 # plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
-# ax.plot(psi,Fz[30,:-1])
+# ax.plot(psi,Fz[30])
 # #%%
 # #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 # fig,ax = plt.subplots(1,1,figsize = (8,6))

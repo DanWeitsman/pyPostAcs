@@ -30,13 +30,8 @@ def eval_pressure(f):
     :param p: total pressure time series, which includes the contributions from each blade.
     '''
 
-    #   computes the pressure time series attributed to this quantity
-    p = np.trapz(np.trapz(f,x = np.insert(abs(np.diff(surfNodes[:,0,0],axis = -1)),24,np.diff(surfNodes[:,0,0])[-1]),axis = 1),x = geomParams['rdim'],axis =1)
-    # p = np.trapz(np.trapz(f,dx = np.mean(abs(np.diff(surfNodes[:,0,0]))),axis = 1),dx = dr,axis =1)
-
-    # p = np.sum(np.sum(f, axis=1), axis=1)*dc*dr
-    # p = np.sum(p,axis = 1)*dr
-    # p=np.sum(p, axis=1) * dr
+    p = np.sum([0.5*(f[:, i] + f[:, i + 1])*dx1[i] for i in range(geomParams['pntsPerXsec']-1)],axis = 0)
+    p = np.trapz(p,x = geomParams['rdim'],axis =1)
     #    subtract our the DC offset
     p_tot = p - np.expand_dims(np.mean(p, axis=1), axis=1)
     #   rearranges and appends an additional array, which accounts for the contributions from the remaining rotor blades.
@@ -70,7 +65,7 @@ def linterp_ind(ind,quant):
     return y
 
 #%%
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_Fz/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
 mics = [5,16,-4]
 save_h5= True
 
@@ -116,6 +111,10 @@ else:
 #%%
 surfNodes = geomParams['surfNodes'].reshape(geomParams['pntsPerXsec'],geomParams['nXsecs'],3,order = 'F')
 surfNorms = (geomParams['surfNorms']/np.expand_dims(np.linalg.norm(geomParams['surfNorms'],axis = 1),axis = 1)).reshape(geomParams['pntsPerXsec'],geomParams['nXsecs'],3,order = 'F')
+#   incremental panel size in the chord-wise (x) direction
+dx1 = np.linalg.norm((np.diff(surfNodes[:, 0, 0], axis=-1), np.diff(surfNodes[:, 0, -1], axis=-1)), axis=0)
+#   incremental panel size in the span-wise (y) direction
+dx2 = np.diff(geomParams['rdim'])
 
 # surfNodes[:, :, 0] = -surfNodes[:, :, 0]
 # surfNorms[:, :, 0] = -surfNorms[:, :, 0]
@@ -153,7 +152,8 @@ dMi_dt = np.array([-M*loadParams['omega']*np.cos(psi),-M*loadParams['omega']*np.
 # vn2 = np.sum(a0*M*surfNorms,axis = -1)
 # vn = np.sum(surfNorms*np.expand_dims(Mi,axis = 1)*a0,axis = 0)
 # vn = np.repeat(np.expand_dims(np.repeat(np.expand_dims(vn,axis = 0),31,axis = 0),axis = -1),361,axis = -1)
-vn = surfNorms[1,:,:,0]*v
+# vn = surfNorms[1,:,:,0]*v
+vn = np.sum(np.cross([0,0,loadParams['omega']],y[:,:,:,0],axis = 0)*surfNorms[:,:,:,0],axis = 0)
 dvn_dt = np.sum(dMi_dt*a0*surfNorms,axis = 0)+np.sum(a0*Mi*np.cross([0,0,loadParams['omega']],surfNorms,axis = 0),axis = 0)
 
 #%%
@@ -187,10 +187,9 @@ r_r,Mr_r,dMr_dt_r= list(map(lambda f:linterp_ind(t_ret_ind,f), [r.transpose(0,2,
 # r_r,Mr_r,vn_r= list(map(lambda f:linterp_ind(t_ret_ind,f), [r.transpose(0,2,3,4,1),Mr,np.repeat(np.expand_dims(vn,axis = 0),len(t_ret_ind),axis = 0)]))
 r_r_mag =  np.linalg.norm(r_r, axis=-1)
 
-
 #%%
-
-term1 = UserIn['rho']*dvn_dt/(r_r_mag*(1-Mr_r)**2)+UserIn['rho']*np.expand_dims(np.expand_dims(vn,axis = 0),axis = -1)*dMr_dt_r/(r_r_mag*(1-Mr_r)**3)
+#UserIn['rho']*dvn_dt/(r_r_mag*(1-Mr_r)**2)
+term1 =UserIn['rho']*dvn_dt/(r_r_mag*(1-Mr_r)**2)+UserIn['rho']*np.expand_dims(np.expand_dims(vn,axis = 0),axis = -1)*dMr_dt_r/(r_r_mag*(1-Mr_r)**3)
 term2 = UserIn['rho']*a0*np.expand_dims(np.expand_dims(vn,axis = 0),axis = -1)*(Mr_r-M**2)/(r_r_mag**2*(1-Mr_r)**3)
 
 p_term1, p_term2, p_tot = list(map(lambda f:(4*np.pi)**-1*eval_pressure(f), [term1,term2,term1+term2]))
@@ -266,11 +265,11 @@ if save_h5:
 # cbar.ax.set_ylabel('$dFz \: [N]$')
 
 #%%
-  # Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
-fig,ax = plt.subplots(1,1,figsize = (8,6))
-#   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
-plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
-ax.plot(psi*180/np.pi,Mr[-5,10,-1,:])
+#   # Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
+# fig,ax = plt.subplots(1,1,figsize = (8,6))
+# #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
+# plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
+# ax.plot(psi*180/np.pi,Mr[-5,10,-1,:])
 
 #%%
 # #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
@@ -299,16 +298,16 @@ ax.plot(psi*180/np.pi,Mr[-5,10,-1,:])
 # ax.quiver(geomParams['surfNodes'][:,0], geomParams['surfNodes'][:,1], geomParams['surfNodes'][:,2],geomParams['surfNorms'][:,0]*scale, geomParams['surfNorms'][:,1]*scale, geomParams['surfNorms'][:,2]*scale)
 
 # # fig.show()
-
-scale = .005
-fig = plt.figure()
-ax = fig.gca(projection = '3d')
-# ax.auto_scale_xyz([-2, 2], [2, 2], [-2, 2])
-# ax.pbaspect = [1, 1, 1]
-ax.set(xlabel = 'x',ylabel = 'y',zlabel = 'z')
-azi = 45
-ax.scatter3D(y[0,:,:,azi], y[1,:,:,azi], y[2,:,:,azi],c = 'red',linewidths = 1)
-ax.quiver(y[0,:,:,azi], y[1,:,:,azi], y[2,:,:,azi],surfNorms[0,:,:,azi]*scale, surfNorms[1,:,:,azi]*scale, surfNorms[2,:,:,azi]*scale)
-ax.set_xlim([-geomParams['R']*1.25,geomParams['R']*1.25])
-ax.set_ylim([-geomParams['R']*1.25,geomParams['R']*1.25])
-ax.set_zlim([-geomParams['R']*1.25,geomParams['R']*1.25])
+#
+# scale = .005
+# fig = plt.figure()
+# ax = fig.gca(projection = '3d')
+# # ax.auto_scale_xyz([-2, 2], [2, 2], [-2, 2])
+# # ax.pbaspect = [1, 1, 1]
+# ax.set(xlabel = 'x',ylabel = 'y',zlabel = 'z')
+# azi = 45
+# ax.scatter3D(y[0,:,:,azi], y[1,:,:,azi], y[2,:,:,azi],c = 'red',linewidths = 1)
+# ax.quiver(y[0,:,:,azi], y[1,:,:,azi], y[2,:,:,azi],surfNorms[0,:,:,azi]*scale, surfNorms[1,:,:,azi]*scale, surfNorms[2,:,:,azi]*scale)
+# ax.set_xlim([-geomParams['R']*1.25,geomParams['R']*1.25])
+# ax.set_ylim([-geomParams['R']*1.25,geomParams['R']*1.25])
+# ax.set_zlim([-geomParams['R']*1.25,geomParams['R']*1.25])

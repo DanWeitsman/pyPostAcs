@@ -11,7 +11,7 @@ import matplotlib.colors as mcolors
 #%% Sets font parameters
 
 fontName = 'Times New Roman'
-fontSize = 12
+fontSize = 16
 plt.rc('font',**{'family':'serif','serif':[fontName],'size':fontSize})
 plt.rc('mathtext',**{'default':'regular'})
 plt.rc('text',**{'usetex':False})
@@ -19,7 +19,7 @@ plt.rc('lines',**{'linewidth':2})
 
 
 #%%
-dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_ff/'
+dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69_ff_n45deg_obs/'
 
 #   raw wopwop output file names
 file = ['pressure.h5']
@@ -28,7 +28,7 @@ file = ['pressure.h5']
 # to true if this is your first time working with the predicted data.
 save_h5= False
 
-save_fig = False
+save_fig = True
 #   legend labels
 leglab = ['Measured','Predicted']
 # leglab=''
@@ -92,24 +92,29 @@ phi = np.arctan2(coord[:, 2],coord[:, 1]) * 180 / np.pi
 azi = np.arctan2(coord[:, 1],coord[:, 0]) * 180 / np.pi
 p = np.squeeze(dat[list(dat.keys())[0]]['pressure']['function_values'][:, :, :, 1:] - np.expand_dims(np.mean(dat[list(dat.keys())[0]]['pressure']['function_values'][:, :, :, 1:], axis = 2), axis = 2))
 OASPL = 10 * np.log10(np.mean(p ** 2, axis=1) / 20e-6 ** 2)
-ff = OASPL[0,0]-10*np.log10((coord[:,1]/geomParams['R'])**2)
-# f_fit = np.poly1d(np.polyfit(coord[-10:,1]/geomParams['R'],OASPL[-10:,-1],1))
+# ff = OASPL[-1,1]-20*np.log10(np.linalg.norm(coord,axis = -1)/np.linalg.norm(coord[-1],axis = -1))
+ff = OASPL[-1,-1]-20*np.log10(np.linalg.norm(coord,axis = -1)/np.linalg.norm(coord[-1],axis = -1))
+
+# Lw = abs(10*np.log10(1/(4*np.pi*coord[:,1]**2)))+OASPL[:,-1]
+# ff2 = Lw[-1]-10*np.log10(4*np.pi*coord[:,1]**2)
 
 #%%
 #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list
 fig,ax = plt.subplots(1,1,figsize = (8,6))
 #   Adds a space in between the subplots and at the bottom for the subplot titles and legend, respectfully.
 plt.subplots_adjust(hspace = 0.35,bottom = 0.15)
-# ax.plot(coord[:,1]/geomParams['R'],OASPL_pred[:,0])
-ax.plot(coord[:,1]/geomParams['R'],10*np.log10((coord[:,1])**-2))
-ax.plot(coord[:,1]/geomParams['R'],OASPL[:,-1])
-# ax.plot(coord[:,1]/geomParams['R'],f_fit(coord[:,1]/geomParams['R']))
+ax.plot(np.linalg.norm(coord,axis = -1)/geomParams['R'],OASPL[:,-1],marker = '^')
+ax.plot(np.linalg.norm(coord,axis = -1)/geomParams['R'],ff,marker = '*')
+ax.set_ylabel('$OASPL \ (dB, \ re: 20  \mu Pa)$')
+ax.set_xlabel('r/R')
 
-# ax.plot(coord[:,1]/geomParams['R'],OASPL[-1,-1]+(10*np.log10((coord[:,1]/geomParams['R'])**-1)-10*np.log10((coord[:,1]/geomParams['R'])**-1)[-1]))
-# ax.axis([coord[0,1]/geomParams['R'],coord[-1,1]/geomParams['R'],40,60])
-ax.set_ylabel('$OASPL \ dB, \  (re: \ 20 \ \mu Pa)$')
-ax.set_xlabel('y/R')
-ax.legend(["Thickness",'Loading','Total'], ncol=3,loc='center',bbox_to_anchor=(0.5, -0.55))
+ax.axis([0,35,30,60])
+ax.grid()
+ax.legend(["Predicted",'Spherical spreading ($p \propto 1/r$)'], ncol=2,loc='center',bbox_to_anchor=(0.5, -0.175))
+ax.set_title(f'$\phi = {int(phi[0])}^\circ$')
+if save_fig:
+    plt.savefig(os.path.join(dir, f'ff_{int(phi[0])}_deg.eps'),format='eps')
+    plt.savefig(os.path.join(dir, f'ff_{int(phi[0])}_deg.png'),format='png')
 
 # #%%
 # #   Initializes figure with the number of subplots equal to the number of mics specified in the "mics" list

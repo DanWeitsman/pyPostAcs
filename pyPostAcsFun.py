@@ -15,7 +15,7 @@ from bisect import bisect
 
 #%%
 fontName = 'Times New Roman'
-fontSize = 12
+fontSize = 16
 plt.rc('font',**{'family':'serif','serif':[fontName],'size':fontSize})
 plt.rc('mathtext',**{'default':'regular'})
 plt.rc('text',**{'usetex':False})
@@ -248,7 +248,7 @@ def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],leve
 
     N = (fs**-1*df)**-1
     t = np.arange(len(xn)) * fs**-1
-    f ,Gxx,Gxx_avg = msPSD(xn,fs,df =df,ovr = ovr,save_fig=0,win = win,plot = False)
+    f,Xm,Sxx,Gxx,Gxx_avg = msPSD(xn,fs,df =df,ovr = ovr,save_fig=0,win = win,plot = False)
     t = t[int(N / 2):-int(N / 2)][::int((1 - ovr) * N)]
 
     if plot is True:
@@ -267,6 +267,7 @@ def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],leve
                 ax.set_xlim([t[0], t[-1]])
 
             ax.set_ylim(f_lim[0], f_lim[1])
+            ax.set_yscale('log')
             # ax.set_title('Mic: '+str(i+1))
             cbar = fig.colorbar(spec)
             cbar.set_ticks(np.arange(levels[0],levels[-1]+1,5))
@@ -276,8 +277,10 @@ def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],leve
 
 
             if save_fig is True:
-                plt.savefig(os.path.join(save_path, 'spectrogram_m' + str(i + 1) + '.png'),format='png')
-                plt.close()
+                plt.savefig(os.path.join(save_path, f'spectrogram_m{str(i + 1)}.png'),format='png')
+                plt.savefig(os.path.join(save_path, f'spectrogram_m{str(i + 1)}.eps'),format='eps')
+
+            plt.close()
 
     return t, f, np.transpose(Gxx)
 

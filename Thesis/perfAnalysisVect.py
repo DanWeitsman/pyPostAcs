@@ -70,7 +70,7 @@ def getLoads(cases):
 #%%
 
 # path to directory containing the rpm sweep cases
-dir = '/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/long_cyc_sweep/e2b'
+dir = '/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/rpm_sweep/h2b'
 
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.

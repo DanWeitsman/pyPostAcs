@@ -53,12 +53,12 @@ def PSD(data):
 
 #%%
 #   Parent directory where all of the data files are contained.
-exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/rpm_sweep/h2b/h2b8'
+exp_dir ='/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/lat_cyc_sweep/lowM/h2b/h2b25'
 
-pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b8_1rev/'
+pred_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/h2b69/'
 
 #   raw wopwop output file names
-file = ['pressure.h5']
+file = ['pressure.h5','octaveFilterSP/spl_octFilt_spectrum.h5']
 
 # set equal to true to reformat the raw data from wopwop and write it out as an HDF5 file, this only needs to be set
 # to true if this is your first time working with the predicted data.
@@ -111,8 +111,8 @@ with h5py.File(os.path.join(pred_dir, 'MainDict.h5'), "r") as f:
 
 #%%
 
-micR = np.array([65.19,62.97,61.34,60.34,60.00,60.34,61.34,62.97,65.19,67.93,71.14,74.75])
-exp = exp * micR / micR[4]
+# micR = np.array([65.19,62.97,61.34,60.34,60.00,60.34,61.34,62.97,65.19,67.93,71.14,74.75])
+# exp = exp * micR / micR[4]
 
 #%%
 # Tip-Mach number
@@ -129,15 +129,15 @@ pred[list(pred.keys())[0]]['pressure']['function_values'] = np.flip(pred[list(pr
 #   computes the OASPL (dB) for thickness, loading, and total noise for each observer, which is added as an additional dictionary entree
 pred[list(pred.keys())[0]]['OASPL'] = 10 * np.log10(np.mean((pred[list(pred.keys())[0]]['pressure']['function_values'][:, :, :, 1:]-np.expand_dims(np.mean(pred[list(pred.keys())[0]]['pressure']['function_values'][:, :, :, 1:],axis = 2),axis = 2)) ** 2, axis=2) / 20e-6 ** 2)
 
-# #    replaces 'nan' values with zeros
-# pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'][np.where(np.isnan(pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values']))] = 0
-# # flips dataset
-# pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'] = np.flip(pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'],axis = 1)
-#
-# # sums the SPL (dB) of the broadband noise sources, which is added as an additional dictionary entree
-# pred[list(pred.keys())[0]]['BPM_total_dB'] =20*np.log10(np.sum(10**(pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'][:,:,:,4:-1]/20),axis = 3))
-# # computes the OASPL (dB) of the total broadband noise across all predicted frequency bands, which is added as an additional dictionary entree
-# pred[list(pred.keys())[0]]['BPM_OASPL_dB'] =  20*np.log10(np.sum(10**(pred[list(pred.keys())[0]]['BPM_total_dB']/20),axis = 2))
+#    replaces 'nan' values with zeros
+pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'][np.where(np.isnan(pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values']))] = 0
+# flips dataset
+pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'] = np.flip(pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'],axis = 1)
+
+# sums the SPL (dB) of the broadband noise sources, which is added as an additional dictionary entree
+pred[list(pred.keys())[0]]['BPM_total_dB'] =20*np.log10(np.sum(10**(pred[list(pred.keys())[0]]['octaveFilterSP/spl_octFilt_spectrum']['function_values'][:,:,:,4:-1]/20),axis = 3))
+# computes the OASPL (dB) of the total broadband noise across all predicted frequency bands, which is added as an additional dictionary entree
+pred[list(pred.keys())[0]]['BPM_OASPL_dB'] =  20*np.log10(np.sum(10**(pred[list(pred.keys())[0]]['BPM_total_dB']/20),axis = 2))
 
 #%%
 # computes the observer position

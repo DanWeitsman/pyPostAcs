@@ -7,7 +7,7 @@ import bisect
 from timeit import default_timer
 # %%
 fontName = 'Times New Roman'
-fontSize = 12
+fontSize = 16
 plt.rc('font', **{'family': 'serif', 'serif': [fontName], 'size': fontSize})
 plt.rc('mathtext', **{'default': 'regular'})
 plt.rc('text', **{'usetex': False})
@@ -16,20 +16,21 @@ plt.rc('lines', **{'linewidth': 2})
 # %%
 
 # path to directory containing the rpm sweep cases
-dir = '/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/'
+exp_dir = '/Users/danielweitsman/Box/Jan21Test/dan_thesis/runs/rpm_sweep/h2b'
 
+pred_dir = '/Users/danielweitsman/Desktop/Masters_Research/lynx/perf_sweep'
 # If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
 # all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.
-caseName = ['rpm_sweep/h2b/h2b7','rpm_sweep/h2b/h2b8','h2b69','lat_cyc_sweep/lowM/h2b/h2b15','lat_cyc_sweep/lowM/h2b/h2b25','lat_cyc_sweep/lowM/h2b/h2b36']
+caseName = []
 
 # Set equal to "True" in order to plot the thrust/torque/rpm time series for each run. These plots are not saved but are
 # useful for determining the averaging interval to use for the thrust/torque profiles.
 plot_tseries = False
-plot_T_Q_profile = False
+plot_T_Q_profile = True
 plot_OASPL= False
 
 #   save generated figures
-save_fig = False
+save_fig = True
 #   save average load data and OASPL into a new h5 file
 save_h5 = False
 
@@ -41,7 +42,7 @@ mics = [1,5,9,10]
 #   Start time of averaging interval (s)
 t_min = 10
 #   End time of averaging interval (s)
-t_max = 12
+t_max = 15
 
 # %%
 # def filt_response(bb,aa,fs,N):
@@ -86,6 +87,42 @@ t_max = 12
 # ax[1].set_xscale('log')
 # ax[1].set_xlim(f[0],f[-1])
 
+#%%
+# Import predicted data
+geomParams = {}
+loadParams = {}
+UserIn = {}
+
+#   imports the dictionaries saved in the MainDict.h5 file from VSP2WOPWOP.
+with h5py.File(os.path.join(pred_dir, 'MainDict.h5'), "r") as f:
+
+    for k, v in f[list(f.keys())[0]]['geomParams'].items():
+        geomParams = {**geomParams, **{k: v[()]}}
+    # geomParams = {**geomParams, **{case: geomParams_temp}}
+
+    loadParams_temp = {}
+    for c_k,c_v in f[list(f.keys())[0]]['loadParams'].items():
+        for k, v in c_v.items():
+            loadParams_temp = {**loadParams_temp, **{k: v[()]}}
+        loadParams = {**loadParams, **{c_k: loadParams_temp}}
+
+    for k, v in f[list(f.keys())[1]].items():
+        UserIn = {**UserIn, **{k: v[()]}}
+#%%
+# Extracts thrust and torque values and assembles them into separate arrays
+T_pred = np.empty(len(loadParams))
+CT_pred = np.empty(len(loadParams))
+Q_pred = np.empty(len(loadParams))
+CP_pred = np.empty(len(loadParams))
+omega_pred = np.empty(len(loadParams))
+
+for i,v in enumerate(loadParams):
+    CT_pred[i] = loadParams[v]['CT']
+    CP_pred[i] = loadParams[v]['CP']
+    T_pred[i] = loadParams[v]['T']
+    Q_pred[i] = loadParams[v]['Q']
+    omega_pred[i] = loadParams[v]['omega']
+
 # %%
 #   Determines which cases to use for the thrust/torque profiles
 if caseName == []:
@@ -93,7 +130,7 @@ if caseName == []:
     # This line of code rearranges the order of the cases so that they are increasing
     # numerically, however it only applies to the TAMU data. Comment this line and uncomment the previous line if you
     # are working with an alternate dataset.
-    cases = [os.path.basename(dir)[:3] + str(x) for x in sorted([int(x[3:]) for x in os.listdir(dir)])]
+    cases = [os.path.basename(exp_dir)[:3] + str(x) for x in sorted([int(x[3:]) for x in os.listdir(exp_dir)])]
 else:
     cases = caseName
 
@@ -113,11 +150,11 @@ Mx_err=np.zeros(len(cases))
 My_avg=np.zeros(len(cases))
 My_err = np.zeros(len(cases))
 OASPL=np.zeros((len(cases),12))
-
+rpm_err = np.zeros(len(cases))
 #   Loops through all the cases
 for i, case in enumerate(cases):
     #   Opens the h5 file corresponding to each case
-    with h5py.File(os.path.join(dir, case, 'acs_data.h5'), 'r') as dat_file:
+    with h5py.File(os.path.join(exp_dir, case, 'acs_data.h5'), 'r') as dat_file:
         #   temporal resolution (s)
         dt = np.diff(dat_file['Time (s)'])[0]
         #   Sampling rate (Hz)
@@ -129,8 +166,11 @@ for i, case in enumerate(cases):
 
         rpm = (np.diff(np.squeeze(np.where(np.diff(dat_file['Motor1 RPM']) == 1))) / fs / 60) ** -1
         t_rpm = t[np.squeeze(np.where(np.diff(dat_file['Motor1 RPM']) == 1))]
-        rpm_avg[i] = np.mean(rpm[bisect.bisect(t_rpm, t_min):bisect.bisect(t_rpm, t_max)])
-        N_rev = len(rpm[bisect.bisect(t_rpm, t_min):bisect.bisect(t_rpm, t_max)])
+
+        rpm_trun = rpm[bisect.bisect(t_rpm, t_min):bisect.bisect(t_rpm, t_max)]
+        rpm_avg[i] = np.mean(rpm_trun)
+        N_rev = len(rpm_trun)
+        rpm_err[i] = 1.96 * np.std(rpm_trun) / np.sqrt(N_rev)
 
         T_filt = lfilter(b, a, dat_file['Motor1 Thrust (N)'])
         T_avg[i] = np.mean(dat_file['Motor1 Thrust (N)'][int(t_min * fs):int(t_max * fs)])
@@ -209,6 +249,12 @@ perf_quant = [rpm_avg,T_avg,Q_avg,Fx_2,Fy_2,Mx_2,My_2]
 perf_quant_avg = [np.mean(n) for n in perf_quant]
 perf_quant_std = [1.94*np.std(n)/np.sqrt(len(n)) for n in perf_quant]
 
+CT_avg = T_avg/(UserIn['rho']*np.pi*geomParams['R']**2*(rpm_avg/60*2*np.pi*geomParams['R'])**2)
+CP_avg = Q_avg/(UserIn['rho']*np.pi*geomParams['R']**2*(rpm_avg/60*2*np.pi*geomParams['R'])**2*geomParams['R'])
+
+CT_err = np.sqrt((1/(UserIn['rho']*np.pi*geomParams['R']**2*(rpm_avg/60*2*np.pi*geomParams['R'])**2))**2*T_err**2+(-2*T_avg/(UserIn['rho']*np.pi*geomParams['R']**2*(rpm_avg/60*2*np.pi)**3*geomParams['R']**2))**2*rpm_err**2)
+CP_err = np.sqrt((1/(UserIn['rho']*np.pi*geomParams['R']**2*(rpm_avg/60*2*np.pi*geomParams['R'])**2*geomParams['R']))**2*Q_err**2+(-2*Q_avg/(UserIn['rho']*np.pi*geomParams['R']**2*(rpm_avg/60*2*np.pi*geomParams['R'])**3))**2*rpm_err**2)
+
 #%%
 
 T_fit =np.poly1d(np.polyfit(rpm_avg,T_avg,2))
@@ -219,44 +265,81 @@ rpm_run = np.arange(2000,6500,500)
 #%%
 if save_fig:
     #   Creates a new figures folder in the parent directory where to save the thrust and torque profiles
-    if not os.path.exists(os.path.join(os.path.dirname(dir), 'Figures')):
-        os.mkdir(os.path.join(os.path.dirname(dir), 'Figures'))
-    if not os.path.exists(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir))):
-        os.mkdir(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir)))
+    if not os.path.exists(os.path.join(os.path.dirname(exp_dir), 'Figures')):
+        os.mkdir(os.path.join(os.path.dirname(exp_dir), 'Figures'))
+    if not os.path.exists(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir))):
+        os.mkdir(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir)))
 
 # %%     Thrust and rpm profile
 
 if plot_T_Q_profile:
     #   initializes figures
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
-    ax.set_title(os.path.basename(dir))
+    ax.set_title(os.path.basename(exp_dir))
     ax.errorbar(rpm_avg, T_avg, yerr=T_err, fmt='-.o')
-    plt.plot(rpm_run,T_fit(rpm_run))
+    ax.plot(omega_pred, T_pred, marker = '^')
+    # plt.plot(rpm_run,T_fit(rpm_run))
     ax.set_ylabel('Thrust, T (N)')
     ax.set_xlabel('RPM')
+    ax.legend(['Measured', 'Predicted'], loc='center', ncol=2, bbox_to_anchor=(.5, -.625))
     # ax.set_xlim([1000, 5250])
     # ax.set_ylim([0, 70])
     ax.grid()
     if save_fig:
-        plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'T_profile.png'), format='png')
+        plt.savefig(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir), 'T_profile.png'), format='png')
 
 # %%
     fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
-    ax.set_title(os.path.basename(dir))
+    ax.set_title(os.path.basename(exp_dir))
     ax.errorbar(rpm_avg, Q_avg, yerr=Q_err, fmt=':o')
+    ax.plot(omega_pred, Q_pred, marker = '^')
     ax.set_ylabel('Torque, Q (Nm)')
     ax.set_xlabel('RPM')
+    ax.legend(['Measured', 'Predicted'], loc='center', ncol=2, bbox_to_anchor=(.5, -.625))
     # ax.set_xlim([1000, 5250])
     # ax.set_ylim([-1.5, 1.5])
     ax.grid()
     if save_fig:
-        plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'Q_profile.png'), format='png')
+        plt.savefig(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir), 'Q_profile.png'), format='png')
+#%%
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    plt.subplots_adjust(hspace=0.35, bottom=0.17)
+    # ax.set_title(os.path.basename(exp_dir))
+    ax.plot(omega_pred, CT_pred, marker = '^')
+    ax.errorbar(rpm_avg, CT_avg, yerr=CT_err, fmt=':o')
+    ax.set_ylabel('Thrust Coefficient, CT')
+    ax.set_xlabel('RPM')
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(-3, -3))
+    ax.legend(['Predicted', 'Measured'], loc='center', ncol=2, bbox_to_anchor=(.5, -.175))
+    ax.set_xlim([round(rpm_avg[0])-500, round(rpm_avg[-1])+500])
+    # ax.set_ylim([-1.5, 1.5])
+    ax.grid()
+    if save_fig:
+        plt.savefig(os.path.join(pred_dir, 'rpm_vs_CT.png'), format='png')
+        plt.savefig(os.path.join(pred_dir, 'rpm_vs_CT.eps'), format='eps')
+
+#%%
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+    plt.subplots_adjust(hspace=0.35, bottom=0.17)
+    ax.plot(omega_pred, CP_pred, marker = '^')
+    ax.errorbar(rpm_avg, CP_avg, yerr=CP_err, fmt=':o')
+    ax.set_ylabel('Power Coefficient, CP')
+    ax.set_xlabel('RPM')
+    ax.ticklabel_format(axis='y', style='sci', scilimits=(-4, -4))
+    ax.legend(['Predicted', 'Measured'], loc='center', ncol=2, bbox_to_anchor=(.5, -.175))
+    ax.set_xlim([round(rpm_avg[0])-500, round(rpm_avg[-1])+500])
+    # ax.set_xlim([1000, 5250])
+    # ax.set_ylim([-1.5, 1.5])
+    ax.grid()
+    if save_fig:
+        plt.savefig(os.path.join(pred_dir, 'rpm_vs_CP.png'), format='png')
+        plt.savefig(os.path.join(pred_dir, 'rpm_vs_CP.eps'), format='eps')
 
 # %%
 elif plot_OASPL:
     for m in mics:
         fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
-        ax.set_title(os.path.basename(dir)+': Mic '+str(m))
+        ax.set_title(os.path.basename(exp_dir) + ': Mic ' + str(m))
         ax.plot(My_2, OASPL[:, m], marker ='o')
         ax.set_ylabel('$OASPL, \ dB \ (re: 20 \mu Pa)$')
         ax.set_xlabel('Pitching Moment, My (Nm)')
@@ -264,11 +347,11 @@ elif plot_OASPL:
         # ax.set_ylim([86, 89])
         ax.grid()
         if save_fig:
-            plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'My_OASPL_m'+str(m)+'.png'), format='png')
+            plt.savefig(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir), 'My_OASPL_m' + str(m) + '.png'), format='png')
 
         #%%
         fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
-        ax.set_title(os.path.basename(dir)+': Mic '+str(m))
+        ax.set_title(os.path.basename(exp_dir) + ': Mic ' + str(m))
         ax.plot(Mx_2, OASPL[:, m], marker ='o')
         ax.set_ylabel('$OASPL, \ dB \ (re: 20 \mu Pa)$')
         ax.set_xlabel('Rolling Moment, Mx (Nm)')
@@ -276,11 +359,11 @@ elif plot_OASPL:
         # ax.set_ylim([86, 89])
         ax.grid()
         if save_fig:
-            plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'Mx_OASPL_m'+str(m)+'.png'), format='png')
+            plt.savefig(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir), 'Mx_OASPL_m' + str(m) + '.png'), format='png')
 
     # %%
         fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
-        ax.set_title(os.path.basename(dir)+': Mic '+str(m))
+        ax.set_title(os.path.basename(exp_dir) + ': Mic ' + str(m))
         ax.plot(Fy_2, OASPL[:, m], marker ='o')
         ax.set_ylabel('$OASPL, \ dB \ (re: 20 \mu Pa)$')
         ax.set_xlabel('Hub Force, Fy (N)')
@@ -289,11 +372,11 @@ elif plot_OASPL:
         ax.grid()
 
         if save_fig:
-            plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'Fy_OASPL_m'+str(m)+'.png'), format='png')
+            plt.savefig(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir), 'Fy_OASPL_m' + str(m) + '.png'), format='png')
 
     # %%
         fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
-        ax.set_title(os.path.basename(dir)+': Mic '+str(m))
+        ax.set_title(os.path.basename(exp_dir) + ': Mic ' + str(m))
         ax.plot(Fx_2, OASPL[:, m], marker ='o')
         ax.set_ylabel('$OASPL, \ dB \ (re: 20 \mu Pa)$')
         ax.set_xlabel('Side Force, Fx (N)')
@@ -302,7 +385,7 @@ elif plot_OASPL:
         ax.grid()
 
         if save_fig:
-            plt.savefig(os.path.join(os.path.dirname(dir), 'Figures', os.path.basename(dir), 'Fx_OASPL_m'+str(m)+'.png'), format='png')
+            plt.savefig(os.path.join(os.path.dirname(exp_dir), 'Figures', os.path.basename(exp_dir), 'Fx_OASPL_m' + str(m) + '.png'), format='png')
 
 # %%
 
@@ -314,10 +397,10 @@ if save_h5:
                 'Q_filt':Q_filt,'Q_avg':Q_avg,'Q_err':Q_err,'Mx_filt':Mx_filt,'Mx_avg':Mx_avg,'Mx_err':Mx_err,
                 'My_filt':My_filt,'My_avg':My_avg,'My_err':My_err,'OASPL':OASPL}
 
-    if os.path.exists(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5')):
-        os.remove(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5'))
+    if os.path.exists(os.path.join(os.path.dirname(exp_dir), os.path.basename(exp_dir) + '.h5')):
+        os.remove(os.path.join(os.path.dirname(exp_dir), os.path.basename(exp_dir) + '.h5'))
 
-    with h5py.File(os.path.join(os.path.dirname(dir), os.path.basename(dir) + '.h5'), 'a') as f:
+    with h5py.File(os.path.join(os.path.dirname(exp_dir), os.path.basename(exp_dir) + '.h5'), 'a') as f:
         for k, dat in save_dat.items():
             f.create_dataset(k, shape=np.shape(dat), data=dat)
 
