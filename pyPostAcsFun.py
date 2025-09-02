@@ -198,7 +198,7 @@ def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100]
         Xm = (fft(xn.transpose()) * fs ** -1).transpose()
     else:
         #   number of records
-        Nfft = int(np.floor((len(xn) - N) / ((1 - ovr) * N)))
+        Nfft = int(np.floor((np.shape(xn)[1] - N) / ((1 - ovr) * N)))
         #   initiates matrix to store linear spectrum
         Xm = np.zeros((N,Nfft + 1,np.shape(xn)[1]), complex)
         #   computes linear spectrum for each record and populates matrix
@@ -336,10 +336,11 @@ def xCorr(xn, yn, xfs, yfs):
     '''
 
     # assert len(xn) * xfs ** -1 == len(yn) * yfs ** -1, 'Ensure that the record lengths of both time series are equal'
-    Xm = fft(xn)*xfs**-1
-    Ym = fft(yn)*yfs**-1
-    Sxy = 1 / (len(xn) * xfs**-1) * np.conj(Xm) * Ym
-    Rxy = ifft(Sxy) * xfs
+    N = xn.shape[-1]
+    Xm = fft(xn,axis = -1)*xfs**-1
+    Ym = fft(yn,axis = -1)*yfs**-1
+    Sxy = 1 / (N * xfs**-1) * np.conj(Xm) * Ym
+    Rxy = ifft(Sxy,axis = -1) * xfs
     return Rxy
 
 

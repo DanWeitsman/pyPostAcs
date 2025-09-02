@@ -49,14 +49,14 @@ def filt_response(bb,aa,fs,N):
 
 
 #%%
-dir ='/Users/danielweitsman/Downloads/3_15_20'
-mics = 12
+dir ='/Users/danielweitsman/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/January2021TestCampaign/CalibrationMicrophones/3_15_20'
+mics = 10
 S_spec = np.zeros(mics)
 S_ts = np.zeros(mics)
 
 #%%
 for i in range(mics):
-    with h5py.File(os.path.join(dir,'Mic'+str(i+1),'acs_data.h5'),'r') as f:
+    with h5py.File(os.path.join(dir,'mic'+str(i+1),'acs_data.h5'),'r') as f:
         fs = f['Sampling Rate'][()]
         # fs = 40e3
         data = f['Acoustic Data'][()]
@@ -80,7 +80,7 @@ for i in range(mics):
     # print('Sens Spectra: '+str(np.squeeze(S_spec))+' ; Sens Tseries: '+str(np.squeeze(S_ts)))
 
 #%%
-# dt = fs**-1
+dt = fs**-1
 # df = (dt*len(data))**-1
 # f = np.arange(len(data) / 2)*df
 #

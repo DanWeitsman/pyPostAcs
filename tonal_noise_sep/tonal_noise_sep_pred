@@ -1,0 +1,742 @@
+import os
+import h5py
+import numpy as np
+import sys
+sys.path.insert(0, os.getcwd())
+import pyPostAcsFun as fun
+import matplotlib.pyplot as plt
+sys.path.insert(0, '/Users/danielweitsman/codes/github/OpenWopWop/pyWopwop')
+import wopwop
+import matplotlib.colors as mcolors
+
+#%% Sets font parameters
+
+fontName = 'Times New Roman'
+fontSize = 16
+plt.rc('font',**{'family':'serif','serif':[fontName],'size':fontSize})
+plt.rc('mathtext',**{'default':'regular'})
+plt.rc('text',**{'usetex':False})
+plt.rc('lines',**{'linewidth':2})
+
+#%%
+c  = list(mcolors.TABLEAU_COLORS.keys())[:10]
+cmap = plt.cm.Spectral.reversed()
+
+#%%
+case_dir ='/Users/danielweitsman/Documents/research/prediction/lynx/'
+save_dir = '/Users/danielweitsman/Documents/research/progress presentations'
+save = True
+# If you want to compare specific points in this directory their names can be specified in caseName list. Otherwise,
+# all the cases in this directory directory would be compared and used to generate the thrust/torque profiles.
+caseName = ['h2b8_rgrid','h2b8_rgrid_1pnt']
+
+#%% Imports results from MY-WOPWOP
+
+# mics = np.delete(mics,1)
+leglab = []
+my_wopwop_data = {}
+psu_wopwop_data = {}
+UserIn = {}
+geomParams = {}
+loadParams = {}
+
+for case in caseName:
+    out = {}
+    temp_out = {}
+    work_dir = os.path.join(case_dir,case)
+    with h5py.File(os.path.join(work_dir,case+'_mywopwop_out.h5'), 'r') as f:
+        for dict_k in list(f.keys()):
+            for k, v in f[dict_k].items():
+                temp_out = {**temp_out, **{k: v[()]}}
+            out = {**out, **{dict_k: temp_out}}
+    my_wopwop_data = {**my_wopwop_data,**{case:{'LN_data':out['LN_data'],'TN_data':out['TN_data'],'TN_compact_data':out['TN_compact_data']}}}
+
+#%% Import Maindict.h5
+
+    #   imports the dictionaries saved in the MainDict.h5 file from VSP2WOPWOP.
+    with h5py.File(os.path.join(work_dir, 'MainDict.h5'), "r") as f:
+        geomParams_temp = {}
+        for k, v in f[list(f.keys())[0]]['geomParams'].items():
+            geomParams_temp = {**geomParams_temp,**{k: v[()]}}
+        geomParams = {**geomParams, **{case:geomParams_temp}}
+        loadParams_temp = {}
+        for k, v in f[list(f.keys())[0]]['loadParams'].items():
+            loadParams_temp = {**loadParams_temp,**{k: v[()]}}
+        loadParams = {**loadParams, **{case: loadParams_temp}}
+        UserIn_temp = {}
+        for k, v in f[list(f.keys())[1]].items():
+            UserIn_temp = {**UserIn_temp,**{k: v[()]}}
+        UserIn = {**UserIn, **{case: UserIn_temp}}
+
+# %% PSU-WOPWOP data import and process
+
+#   determines name of the case directory
+    dir_ind = np.squeeze(np.where([os.path.isdir(os.path.join(work_dir, d)) for d in os.listdir(work_dir)]))
+    for i, ind in enumerate(dir_ind):
+        if os.listdir(work_dir)[ind] == 'figures':
+            dir_ind = np.delete(dir_ind, i)
+    case_name = os.listdir(work_dir)[int(dir_ind)]
+
+#   if the pressure.h5 containing the results from PSU-WOPWOP does not exist in the case directory it would be generated
+    if not os.path.exists(os.path.join(work_dir,case_name, 'pressure.h5')):
+        f1 = lambda a: wopwop.extract_wopwop_quant(case_directory=a, prefix='pressure')
+        wopwop.apply_to_namelist([f1], cases_directory=work_dir + os.sep, cases='cases.nam')
+    
+    psu_wopwop_dat_temp = wopwop.import_from_namelist('pressure.h5', cases_directory=work_dir + os.sep, cases='cases.nam')
+
+    nObservers = np.shape(list(psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]].values())[1])[1]
+    #   number of time series data sets (3)
+    ndata = np.shape(list(psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]].values())[1])[3]
+
+    #   flips the data sets so that they corresponds to descending elevation angle
+    psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]['geometry_values'] = np.flip(psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]['geometry_values'],axis = 1)
+    psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]['function_values'] = np.flip(psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]['function_values'],axis =1)
+    #   computes the OASPL (dB) for thickness, loading, and total noise for each observer, which is added as an additional dictionary entree
+    psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]['OASPL'] = 10 * np.log10(np.mean((psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]['function_values'][:, :, :, 1:] - np.expand_dims(np.mean(psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]['function_values'][:, :, :, 1:], axis = 2), axis = 2)) ** 2, axis=2) / 20e-6 ** 2)
+    # computes the observer position
+    psu_wopwop_data = {**psu_wopwop_data,**{case:psu_wopwop_dat_temp[list(psu_wopwop_dat_temp.keys())[0]]}}
+    
+    # coord = np.squeeze(psu_wopwop_dat[list(psu_wopwop_dat.keys())[0]]['geometry_values'][:, :, 0, :])
+    # phi = np.arctan2(coord[:, -1],coord[:, 1]) * 180 / np.pi
+    # azi = np.arctan2(coord[:, 1],coord[:, 0]) * 180 / np.pi
+
+
+#%%
+
+t_rev = (loadParams[caseName[0]]['omega']/60)**-1
+mics = [1,5,9]
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+    # ax[i].plot(np.squeeze(psu_wopwop_data[caseName[0]]['function_values'])[m-1,:,0]/t_rev,np.squeeze(psu_wopwop_data[caseName[0]]['function_values'])[m-1,:,-2],linestyle = '-.')
+    ax[i].plot(my_wopwop_data[caseName[0]]['TN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['TN_data']['p'][m-1],linestyle = '-.')
+    ax[i].plot(my_wopwop_data[caseName[1]]['TN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[1]]['TN_data']['p'][m-1])
+
+    # ax[i].plot(np.squeeze(psu_wopwop_data[caseName[0]]['function_values'])[m-1,:,0]/t_rev,np.squeeze(psu_wopwop_data[caseName[0]]['function_values'])[m-1,:,1],linestyle = '-.')
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['TN_compact_data']['p'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[1]]['TN_compact_data']['p'][m-1])
+
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['TN_data']['p'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[1]]['TN_data']['p'][m-1])
+
+    # ax[i].plot(np.squeeze(psu_wopwop_data[caseName[0]]['function_values'])[m-1,:,0]/t_rev,np.squeeze(psu_wopwop_data[caseName[0]]['function_values'])[m-1,:,-2],linestyle = '-.')
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['TN_data']['p_tot'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['TN_compact_data']['p_tot'][m-1])
+
+    # ax[i].plot(np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,0]/t_rev,np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,-3])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['TN_data']['p'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    ax[-1].legend(['Non-compact','Spanwise Compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    if save:
+        plt.savefig(os.path.join(save_dir,'tn_tseries_1pnt_75R.png'),format = 'png')
+
+#%%
+
+fs = np.diff(my_wopwop_data[caseName[1]]['LN_data']['ts'])[0]**-1
+x = np.concatenate((my_wopwop_data[caseName[0]]['LN_data']['p_steady_ff'],np.zeros(my_wopwop_data[caseName[0]]['LN_data']['p_steady_ff'].shape)),axis = -1)
+y = np.concatenate((my_wopwop_data[caseName[1]]['LN_data']['p_steady_ff'],np.zeros(my_wopwop_data[caseName[1]]['LN_data']['p_steady_ff'].shape)),axis = -1)
+
+# x = np.concatenate((my_wopwop_data[caseName[0]]['TN_compact_data']['p_tot'],np.zeros(my_wopwop_data[caseName[0]]['TN_compact_data']['p'].shape)),axis = -1)
+# y = np.concatenate((my_wopwop_data[caseName[1]]['TN_compact_data']['p_tot'],np.zeros(my_wopwop_data[caseName[1]]['TN_compact_data']['p'].shape)),axis = -1)
+
+check =np.mean(x*y,axis = -1)
+Rxy = np.real(fun.xCorr(x,y,xfs = fs, yfs = fs))
+N = Rxy.shape[-1]
+t = np.arange(N)*fs**-1-N*fs**-1/2
+Rxy = np.concatenate((Rxy[:,int(N / 2):], Rxy[:,:int(N / 2)]),axis = -1)
+
+Rxy_max= np.amax(Rxy,axis = -1)
+t_exp = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)
+t0 = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)[(np.repeat(np.expand_dims(Rxy_max,axis = -1),Rxy.shape[-1],axis = -1)==Rxy)]
+Cxy = Rxy/np.expand_dims(np.sqrt(np.mean(x**2,axis = -1))*np.sqrt(np.mean(y**2,axis = -1)),axis = -1)
+
+A = Rxy_max/np.mean(y**2,axis = -1)
+
+#%%
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(t,Rxy[m-1],linestyle = '-')
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Time Delay [s]')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('$R_{xy} \ [Pa^2]$')
+    ax[i].grid()
+    # ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    # ax[-1].legend(['Non-compact','Scaled spanwise Compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    if save:
+        plt.savefig(os.path.join(save_dir,'Rxy.png'),format = 'png')
+
+
+#%%
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['LN_data']['p_tot'][m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_tot'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotaion')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure (Pa)')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    ax[-1].legend(['Non-compact','Scaled spanwise Compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    if save:
+        plt.savefig(os.path.join(save_dir,'ln_tseries_1pnt_75Rx2_scaled.png'),format = 'png')
+
+#%%
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['LN_data']['p_steady_ff'][m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_steady_ff'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    plt.suptitle('Steady Loading')
+    ax[-1].legend(['Non-compact','Scaled spanwise compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    if save:
+        plt.savefig(os.path.join(save_dir,'ln_steady_tseries_1pnt_75Rx2_scaled.png'),format = 'png')
+
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['LN_data']['p_unsteady_ff'][m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_unsteady_ff'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    plt.suptitle("'Unsteady' Loading")
+
+    ax[-1].legend(['Non-compact','Scaled spanwise compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    if save:
+        plt.savefig(os.path.join(save_dir,'ln_unsteady_tseries_1pnt_75Rx2_scaled.png'),format = 'png')
+
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['LN_data']['p_nf'][m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_nf'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    plt.suptitle('Near-field Loading')
+
+    ax[-1].legend(['Non-compact','Scaled spanwise compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    if save:
+        plt.savefig(os.path.join(save_dir,'ln_nf_tseries_1pnt_75Rx2_scaled.png'),format = 'png')
+
+
+#%%
+
+fs = np.diff(my_wopwop_data[caseName[1]]['LN_data']['ts'])[0]**-1
+x = np.concatenate((my_wopwop_data[caseName[0]]['LN_data']['p_tot']+my_wopwop_data[caseName[0]]['TN_data']['p'],np.zeros(my_wopwop_data[caseName[0]]['LN_data']['p_tot'].shape)),axis = -1)
+y = np.concatenate((my_wopwop_data[caseName[1]]['LN_data']['p_tot']+my_wopwop_data[caseName[1]]['TN_data']['p'],np.zeros(my_wopwop_data[caseName[1]]['LN_data']['p_tot'].shape)),axis = -1)
+
+check =np.mean(x*y,axis = -1)
+Rxy = np.real(fun.xCorr(x,y,xfs = fs, yfs = fs))
+N = Rxy.shape[-1]
+t = np.arange(N)*fs**-1-N*fs**-1/2
+Rxy = np.concatenate((Rxy[:,int(N / 2):], Rxy[:,:int(N / 2)]),axis = -1)
+
+Rxy_max= np.amax(Rxy,axis = -1)
+t_exp = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)
+t0 = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)[(np.repeat(np.expand_dims(Rxy_max,axis = -1),Rxy.shape[-1],axis = -1)==Rxy)]
+Cxy = Rxy/np.expand_dims(np.sqrt(np.mean(x**2,axis = -1))*np.sqrt(np.mean(y**2,axis = -1)),axis = -1)
+
+A = Rxy_max/np.mean(y**2,axis = -1)
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,(my_wopwop_data[caseName[0]]['LN_data']['p_tot']+my_wopwop_data[caseName[0]]['TN_data']['p'])[m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1])/t_rev,(my_wopwop_data[caseName[1]]['LN_data']['p_tot']+my_wopwop_data[caseName[1]]['TN_data']['p'])[m-1],linestyle = ':')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,A[m-1]*(my_wopwop_data[caseName[1]]['LN_data']['p_tot']+my_wopwop_data[caseName[1]]['TN_data']['p'])[m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    ax[-1].legend(['Non-compact','Spanwise compact','Scaled spanwise compact'], loc='center', ncol=3,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+if save:
+    plt.savefig(os.path.join(save_dir,'total_tseries_1pnt_R.png'),format = 'png')
+
+
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['LN_data']['p_tot'][m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_tot'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    ax[-1].legend(['Non-compact','Scaled spanwise compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+if save:
+    plt.savefig(os.path.join(save_dir,'total_ln_tseries_1pnt_R.png'),format = 'png')
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[caseName[0]]['TN_data']['p'][m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,A[m-1]*my_wopwop_data[caseName[1]]['TN_data']['p'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    ax[-1].legend(['Non-compact','Scaled spanwise compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+if save:
+    plt.savefig(os.path.join(save_dir,'total_tn_tseries_1pnt_R.png'),format = 'png')
+
+#%%
+
+def ph_sep(p):
+    N_obs = len(p)
+    p_inph = (p[:int(N_obs/2)]+p[int(N_obs/2)+1:][::-1])/2
+    p_inph = np.concatenate((p_inph,np.expand_dims(p[int(N_obs/2)],axis = 0),p_inph[::-1]),axis = 0)
+    p_outph = p-p_inph
+    return p_inph, p_outph
+
+p_inph_1, p_outph_1 =  ph_sep(my_wopwop_data[caseName[0]]['LN_data']['p_tot']+my_wopwop_data[caseName[0]]['TN_data']['p'])
+p_inph_2, p_outph_2 =  ph_sep(my_wopwop_data[caseName[1]]['LN_data']['p_tot']+my_wopwop_data[caseName[1]]['TN_data']['p'])
+
+def Xcorr(x,y,fs):
+
+    x = np.concatenate((x,np.zeros(x.shape)),axis = -1)
+    y = np.concatenate((y,np.zeros(y.shape)),axis = -1)
+
+    check =np.mean(x*y,axis = -1)
+    Rxy = np.real(fun.xCorr(x,y,xfs = fs, yfs = fs))
+    N = Rxy.shape[-1]
+    t = np.arange(N)*fs**-1-N*fs**-1/2
+    Rxy = np.concatenate((Rxy[:,int(N / 2):], Rxy[:,:int(N / 2)]),axis = -1)
+
+    Rxy_max= np.amax(Rxy,axis = -1)
+    t_exp = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)
+    t0 = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)[(np.repeat(np.expand_dims(Rxy_max,axis = -1),Rxy.shape[-1],axis = -1)==Rxy)]
+    Cxy = Rxy/np.expand_dims(np.sqrt(np.mean(x**2,axis = -1))*np.sqrt(np.mean(y**2,axis = -1)),axis = -1)
+    A = Rxy_max/np.mean(y**2,axis = -1)
+
+    return A, t0
+
+A_inph, t0_inph = Xcorr(p_inph_1,p_inph_2,fs = fs)
+A_outph, t0_outph = Xcorr(p_outph_1,p_outph_2,fs = fs)
+
+x = np.concatenate((p_outph_1,np.zeros(p_outph_1.shape)),axis = -1)
+y = np.concatenate((p_outph_2,np.zeros(p_outph_2.shape)),axis = -1)
+
+check =np.mean(x*y,axis = -1)
+Rxy = np.real(fun.xCorr(x,y,xfs = fs, yfs = fs))
+N = Rxy.shape[-1]
+t = np.arange(N)*fs**-1-N*fs**-1/2
+Rxy = np.concatenate((Rxy[:,int(N / 2):], Rxy[:,:int(N / 2)]),axis = -1)
+
+Rxy_max= np.amax(Rxy,axis = -1)
+t_exp = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)
+t0 = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)[(np.repeat(np.expand_dims(Rxy_max,axis = -1),Rxy.shape[-1],axis = -1)==Rxy)]
+Cxy = Rxy/np.expand_dims(np.sqrt(np.mean(x**2,axis = -1))*np.sqrt(np.mean(y**2,axis = -1)),axis = -1)
+A = Rxy_max/np.mean(y**2,axis = -1)
+
+#%%
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,p_inph_1[m-1],linestyle = '-.')
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,p_inph_2[m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]-t0_inph[m-1])/t_rev,A_inph[m-1]*p_inph_2[m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    plt.suptitle('In-phase Components')
+    ax[-1].legend(['Non-compact','Spanwise compact','Scaled spanwise compact'], loc='center', ncol=3,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+if save:
+    plt.savefig(os.path.join(save_dir,'inph_tseries_1pnt_R.png'),format = 'png')
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,p_outph_1[m-1],linestyle = '-.')
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1]/t_rev,p_outph_2[m-1],linestyle = '-.')
+    ax[i].plot((my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1])/t_rev,A_outph[m-1]*p_outph_2[m-1],linestyle = '-')
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure [Pa]')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+    plt.suptitle('Out-of-phase Components')
+    ax[-1].legend(['Non-compact','Spanwise compact','Scaled spanwise compact'], loc='center', ncol=3,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+if save:
+    plt.savefig(os.path.join(save_dir,'outph_tseries_1pnt_R.png'),format = 'png')
+
+
+#%%
+
+# fs = np.diff(my_wopwop_data[caseName[1]]['LN_data']['ts'])[0]**-1
+# x = np.concatenate((my_wopwop_data[caseName[0]]['TN_compact_data']['p'],np.zeros(my_wopwop_data[caseName[0]]['TN_compact_data']['p'].shape)),axis = -1)
+# y = np.concatenate((my_wopwop_data[caseName[1]]['TN_compact_data']['p'],np.zeros(my_wopwop_data[caseName[1]]['TN_compact_data']['p'].shape)),axis = -1)
+
+# check =np.mean(x*y,axis = -1)
+# Rxy = np.real(fun.xCorr(x,y,xfs = fs, yfs = fs))
+# N = Rxy.shape[-1]
+# t = np.arange(N)*fs**-1-N*fs**-1/2
+# Rxy = np.concatenate((Rxy[:,int(N / 2):], Rxy[:,:int(N / 2)]),axis = -1)
+
+# Rxy_max= np.amax(Rxy,axis = -1)
+# t_exp = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)
+# t0 = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)[(np.repeat(np.expand_dims(Rxy_max,axis = -1),Rxy.shape[-1],axis = -1)==Rxy)]
+# Cxy = Rxy/np.expand_dims(np.sqrt(np.mean(x**2,axis = -1))*np.sqrt(np.mean(y**2,axis = -1)),axis = -1)
+
+# A = Rxy_max/np.mean(y**2,axis = -1)
+
+
+# fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+# plt.subplots_adjust(hspace=0.35, bottom=0.17)
+# for i,m in enumerate(mics):
+
+#     ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[0]]['TN_compact_data']['p'][m-1])
+#     ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[1]]['TN_compact_data']['p'][m-1])
+#     ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1],A[m-1]*my_wopwop_data[caseName[1]]['TN_compact_data']['p'][m-1])
+
+
+#     if i !=len(mics)-1:
+#         ax[i].tick_params(axis='x', labelsize=0)
+#     else:
+#         ax[i].set_xlabel('Rotaion')
+#     if i == int(len(mics)/2):
+#         ax[i].set_ylabel('Pressure (Pa)')
+#     ax[i].grid()
+#     # ax[i].set_xlim([0,1])
+#     ax[-1].legend(['PSU-WOPWOP','MY-WOPWOP','Single Source'], loc='center', ncol=3,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+
+
+#%%
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+    ax[i].plot(t,np.real(Cxy)[m-1])
+    # ax[i].plot(np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,0]/t_rev,np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,-3])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['TN_data']['p'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotaion')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure (Pa)')
+    ax[i].grid()
+    # ax[i].set_xlim([0,1])
+    ax[-1].legend(['PSU-WOPWOP','MY-WOPWOP','Single Source'], loc='center', ncol=3,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+#%%
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[0]]['LN_data']['p_tot'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[1]]['LN_data']['p_tot'][m-1])
+    ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1],A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_tot'][m-1])
+
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotaion')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure (Pa)')
+    ax[i].grid()
+    # ax[i].set_xlim([0,1])
+    ax[-1].legend(['PSU-WOPWOP','MY-WOPWOP','Single Source'], loc='center', ncol=3,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+#%%
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[0]]['LN_data']['p_nf'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[1]]['LN_data']['p_nf'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1],A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_nf'][m-1])
+
+
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[0]]['LN_data']['p_steady_ff'][m-1])
+    ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[0]]['LN_data']['p_steady_ff'][m-1])
+    ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1],A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_steady_ff'][m-1])
+
+
+    # ax[i].plot(my_wopwop_data[caseName[0]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[0]]['LN_data']['p_unsteady_ff'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[1]]['LN_data']['p_unsteady_ff'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1],A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_unsteady_ff'][m-1])
+
+    # ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1]-t0[m-1],A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_nf'][m-1]+A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_unsteady_ff'][m-1]+A[m-1]*my_wopwop_data[caseName[1]]['LN_data']['p_steady_ff'][m-1])
+    # ax[i].plot(my_wopwop_data[caseName[1]]['LN_data']['ts'][:-1],my_wopwop_data[caseName[0]]['LN_data']['p_tot'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotaion')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure (Pa)')
+    ax[i].grid()
+    # ax[i].set_xlim([0,1])
+    ax[-1].legend(['PSU-WOPWOP','MY-WOPWOP','Single Source'], loc='center', ncol=3,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+#%% Verify results were imported correctly by plotting the pressure time series from both codes
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+    ax[i].plot(np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,0]/t_rev,np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,-2])
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['LN_data']['p_tot'][m-1])
+    
+    # ax[i].plot(np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,0]/t_rev,np.squeeze(psu_wopwop_data[case]['function_values'])[m-1,:,-3])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['TN_data']['p'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotaion')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure (Pa)')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[-1].legend(['PSU-WOPWOP','MY-WOPWOP'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+#%%
+
+p_tot = my_wopwop_data[case]['LN_data']['p_tot']+my_wopwop_data[case]['TN_data']['p']
+N_obs = len(p_tot)
+
+p_inph = (p_tot[:int(N_obs/2)]+p_tot[int(N_obs/2)+1:][::-1])/2
+p_inph = np.concatenate((p_inph,np.expand_dims(p_tot[int(N_obs/2)],axis = 0),p_inph[::-1]),axis = 0)
+p_outph = p_tot-p_inph
+
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,p_inph[m-1])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,p_outph[m-1])
+
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,(p_outph-(p_outph+p_inph)/2)[m-1])
+
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,((p_inph-p_outph)/2)[m-1])
+    
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['LN_data']['p_unsteady_ff'][m-1])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['LN_data']['p_unsteady_ff'][m-1]+my_wopwop_data[case]['TN_data']['p'][m-1])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['LN_data']['p_steady_ff'][m-1]+my_wopwop_data[case]['LN_data']['p_nf'][m-1])
+
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['TN_data']['p'][m-1])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,my_wopwop_data[case]['LN_data']['p_tot'][m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotaion')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('Pressure (Pa)')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[-1].legend(['In-Phase','Out-Of-Phase','Thickness','Loading'], loc='center', ncol=4,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+#%%
+
+# DF = np.gradient((np.linalg.norm(my_wopwop_data[caseName[0]]['LN_data']['r_r'],axis = 1)*(1-my_wopwop_data[caseName[0]]['LN_data']['Mr_r']))**-1,axis = -1)*my_wopwop_data[caseName[0]]['LN_data']['dt']
+DF = np.linalg.norm(my_wopwop_data[caseName[0]]['LN_data']['r_r'],axis = 1)*(1-my_wopwop_data[caseName[0]]['LN_data']['Mr_r'])**-1
+# DF = np.sum(np.array([np.roll(DF[:,:,:-1],-int(361/UserIn[caseName[0]]['Nb'])*Nb,axis = -1) for Nb in range(UserIn[caseName[0]]['Nb'])]),axis = 0)-2*np.expand_dims(np.mean(DF,axis = -1),axis = -1)
+DF_tot = np.sum(DF,axis = 1)/30
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF[m-1,int(0.25*DF.shape[1])-1])
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF[m-1,int(0.5*DF.shape[1])-1])
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF[m-1,int(0.75*DF.shape[1])-1])
+    ax[i].plot((my_wopwop_data[case]['LN_data']['ts'][:-1]-t0[m-1])/t_rev,.3*DF[m-1,int(DF.shape[1])-1])
+    # ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF_tot[m-1])
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel(r'$ \frac{\partial}{\partial t} \left [ \frac{1}{r(1-M_r)}\right]$')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+
+    ax[-1].legend(['0.25R','0.5R','0.75R','R','total'], loc='center', ncol=4,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    plt.savefig(os.path.join(save_dir,'d_dt_M_r.png'),format = 'png')
+
+#%%
+
+Mr = np.sum(my_wopwop_data[caseName[1]]['LN_data']['r']*my_wopwop_data[caseName[1]]['LN_data']['Mi'],axis = 1)
+DF = np.gradient((np.linalg.norm(my_wopwop_data[caseName[0]]['LN_data']['r'],axis = 1)*(1-Mr))**-1,axis = -1)
+
+# DF = np.linalg.norm(my_wopwop_data[caseName[0]]['LN_data']['r_r'],axis = 1)*(1-my_wopwop_data[caseName[0]]['LN_data']['Mr_r'])
+
+DF = (1-my_wopwop_data[caseName[0]]['LN_data']['Mr_r'])**-1
+DF = np.sum(np.array([np.roll(DF[:,:,:-1],-int(361/UserIn[caseName[0]]['Nb'])*Nb,axis = -1) for Nb in range(UserIn[caseName[0]]['Nb'])]),axis = 0)-2*np.expand_dims(np.mean(DF,axis = -1),axis = -1)
+DF_tot = np.sum(DF,axis = 1)
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF[m-1,int(0.25*DF.shape[1])-1])
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF[m-1,int(0.5*DF.shape[1])-1])
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF[m-1,int(0.75*DF.shape[1])-1])
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF[m-1,int(DF.shape[1])-1])
+    ax[i].plot(my_wopwop_data[case]['LN_data']['ts'][:-1]/t_rev,DF_tot[m-1]/15,linestyle = '-.')
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Rotation')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel(r'$\left [ \frac{1}{1-M_r}\right]_\tau$')
+    ax[i].grid()
+    ax[i].set_xlim([0,1])
+    ax[i].set_title(f'M{m}')
+
+    ax[-1].legend(['0.25R','0.5R','0.75R','R','Total'], loc='center', ncol=5,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+#%%
+
+x = np.concatenate((DF,np.zeros(my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape)),axis = -1)
+y = np.concatenate((np.repeat(np.expand_dims(DF_tot,axis = 1),my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape[1],axis = 1),np.zeros(my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape)),axis = -1)
+
+
+# x = np.concatenate((my_wopwop_data[caseName[0]]['LN_data']['Mr_r'],np.zeros(my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape)),axis = -1)
+# y = np.concatenate((np.repeat(np.expand_dims(np.sum(my_wopwop_data[caseName[0]]['LN_data']['Mr_r'],axis = 1),axis = 1),my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape[1],axis = 1),np.zeros(my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape)),axis = -1)
+Rxy = np.real(fun.xCorr(x,y,xfs = fs, yfs = fs))
+N = Rxy.shape[-1]
+t = np.arange(N)*fs**-1-N*fs**-1/2
+Rxy = np.concatenate((Rxy[:,:,int(N / 2):], Rxy[:,:,:int(N / 2)]),axis = -1)
+Rxy_max= np.amax(Rxy,axis = -1)
+t_exp = t*np.ones(Rxy.shape)
+
+# t_exp = np.repeat(np.expand_dims(t,axis = 0),len(Rxy),axis = 0)
+t0 = t_exp[(np.repeat(np.expand_dims(Rxy_max,axis = -1),Rxy.shape[-1],axis = -1)==Rxy)].reshape(Rxy.shape[0],Rxy.shape[1])
+Cxy = Rxy/np.expand_dims(np.sqrt(np.mean(x**2,axis = -1))*np.sqrt(np.mean(y**2,axis = -1)),axis = -1)
+A = Rxy_max/np.mean(y**2,axis = -1)
+
+r_ind = np.where((np.expand_dims(np.amax(np.amax(Cxy,axis = -1),axis = -1),axis = -1)*np.ones((Cxy.shape[0],Cxy.shape[1]))==np.amax(Cxy,axis = -1)))[1]
+r_pos = geomParams[caseName[0]]['r'][r_ind]
+print(r_pos)
+
+fig, ax = plt.subplots(len(mics), 1, figsize=(8, 6))
+plt.subplots_adjust(hspace=0.35, bottom=0.17)
+for i,m in enumerate(mics):
+
+    ax[i].plot(t,Cxy[m-1,int(0.25*Rxy.shape[1])-1],linestyle = '-')
+    ax[i].plot(t,Cxy[m-1,int(0.5*Rxy.shape[1])-1],linestyle = '-')
+    ax[i].plot(t,Cxy[m-1,int(0.75*Rxy.shape[1])-1],linestyle = '-')
+    # ax[i].plot(t,Rxy[m-1,int(Rxy.shape[1])-1],linestyle = '-')
+
+    if i !=len(mics)-1:
+        ax[i].tick_params(axis='x', labelsize=0)
+    else:
+        ax[i].set_xlabel('Time Delay [s]')
+    if i == int(len(mics)/2):
+        ax[i].set_ylabel('$C_{xy} $')
+    ax[i].grid()
+    ax[i].set_xlim([-5e-3,5e-3])
+    ax[i].set_title(f'M{m}')
+    ax[-1].legend(['0.25R','0.5R','0.75R','R','total'], loc='center', ncol=4,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+
+    # ax[-1].legend(['Non-compact','Scaled spanwise Compact'], loc='center', ncol=2,bbox_to_anchor=(.5, -.68),columnspacing = 1,handlelength = 1.25)
+    if save:
+        plt.savefig(os.path.join(save_dir,'Rxy.png'),format = 'png')
+
+#%%
+x = np.concatenate((DF[:,int(0.55*DF.shape[1])-1],np.zeros(DF_tot.shape)),axis = -1)
+# y = np.concatenate((DF[:,int(DF.shape[1])-1],np.zeros(DF_tot.shape)),axis = -1)
+y = np.concatenate((DF_tot,np.zeros(DF_tot.shape)),axis = -1)
+A,t0 = Xcorr(x,y,fs = fs)
+
+
+y = np.concatenate((np.repeat(np.expand_dims(DF_tot,axis = 1),my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape[1],axis = 1),np.zeros(my_wopwop_data[caseName[0]]['LN_data']['Mr_r'].shape)),axis = -1)

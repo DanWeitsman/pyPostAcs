@@ -28,7 +28,7 @@ case_dir ='/Users/danielweitsman/Desktop/Masters_Research/lynx/'
 caseName = ['h2b69_rgrid']
 
 save_dir = '//Users/danielweitsman/Desktop/Masters_Research/lynx/figures/exp/mic_pair_ph_sep/hover/h2b69'
-save_fig = True
+save_fig = False
 #   Linestyle for each case
 linestyle =['-.','--',':','-']
 

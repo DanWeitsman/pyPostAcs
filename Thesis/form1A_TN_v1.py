@@ -9,7 +9,6 @@ import matplotlib.colors as mcolors
 from scipy.interpolate import interp1d
 import scipy.optimize  as opt
 from time import process_time
-import pyvista
 #%% Sets font parameters
 
 fontName = 'Times New Roman'
