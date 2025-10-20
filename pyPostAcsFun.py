@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 '''
 Acoustic Post Processing Functions
 By Daniel Weitsman
@@ -7,23 +9,82 @@ By Daniel Weitsman
 import os
 import numpy as np
 from scipy.fft import fft,ifft
-from scipy.signal import lfilter
+from scipy.signal import lfilter,welch,windows,ShortTimeFFT,csd,butter
+from scipy.signal.windows import get_window
+
 import matplotlib.pyplot as plt
 import h5py
 import re
 from bisect import bisect
 
 #%%
-fontName = 'Times New Roman'
-fontSize = 16
-plt.rc('font',**{'family':'serif','serif':[fontName],'size':fontSize})
-plt.rc('mathtext',**{'default':'regular'})
-plt.rc('text',**{'usetex':False})
-plt.rc('lines',**{'linewidth':2})
-
+plt.rcParams['text.usetex'] = True
+plt.rcParams['font.family'] = 'serif'
+plt.rcParams['font.serif'] = ["Times New Roman"]
+plt.rcParams['font.size'] = 16
+default_colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+linestyle = ['-',':','--','-.']
 #%%
 
-def apply_fun_to_h5(dir, function, append_perf = False):
+
+def import_h5(dir):
+    
+    def h5_to_dict(h5_obj):
+        """
+        Recursively converts an HDF5 file/group into a nested dictionary.
+
+        Args:
+            h5_obj (h5py.File or h5py.Group): HDF5 file or group object.
+
+        Returns:
+            dict: Nested dictionary representation of the HDF5 structure.
+        """
+        h5_dict = {}
+        for key,value in h5_obj.items():
+            if isinstance(value, h5py.Group):
+                # Recursively process groups
+                h5_dict.update({key:h5_to_dict(value)})
+            else:
+                if isinstance(value[()], bytes):
+                    h5_dict.update({key:value[()].decode()})
+                else:
+                    h5_dict.update({key:value[()]})
+        return h5_dict
+
+    with h5py.File(dir, 'r+') as f:
+        data = h5_to_dict(f)
+    return data
+
+def write_h5(dir, data):
+    """
+    Exports a nested dictionary to an HDF5 file.
+
+    Args:
+        data (dict): The nested dictionary to export.
+        file_path (str): Path to the HDF5 file to save.
+    """
+    def dict_to_h5(h5_group, data):
+        for key, value in data.items():
+            if isinstance(value, dict):
+                subgroup = h5_group.create_group(key)
+                dict_to_h5(subgroup, value)
+            else:
+                if isinstance(value, np.ndarray):
+                #     value = np.asarray([value])
+                    h5_group.create_dataset(key, data=value,        
+                    compression="gzip",     # compression filter
+                    compression_opts=1,     # level (depends on filter)
+                    shuffle=True,           # optional filter for better compression
+                    fletcher32=True)         # checksum for error detection
+                else:
+                    h5_group.create_dataset(key, data=value)
+
+    with h5py.File(dir, 'w') as f:
+        dict_to_h5(f, data)
+
+
+
+def apply_fun(dir,function,args):
 
     '''
     This function finds all the acs_data.h5 files contained in a directory and all of its subdirectories and applies
@@ -39,34 +100,69 @@ def apply_fun_to_h5(dir, function, append_perf = False):
     #   Checks to ensure that functions are provided in a list
     assert isinstance(function, list), 'Functions must be inputed to this function in a list'
 
-    #   Loops through each subfolder in a directory until arriving at the base folder
-    for item in os.listdir(dir):
-        if os.path.isdir(os.path.join(dir, item)):
-            apply_fun_to_h5(os.path.join(dir, item), function, append_perf)
-
-    #   Checks whether the acs_data.h5 exists in current directory
-    if os.path.exists(os.path.join(dir, 'acs_data.h5')):
-        print('h5 file exists in' + dir)
-    #   Makes a new 'Figures' folder in the current directory
-        if os.path.exists(os.path.join(dir, 'Figures')) is False:
-            os.mkdir(os.path.join(dir, 'Figures'))
-    #   Opens the acs_data.h5 file and executes all the specified functions
-        with h5py.File(os.path.join(dir, 'acs_data.h5'),'r+') as dat_file:
-            if append_perf is True:
-                append_perf_dat(dat_file, dir)
-            for f in function:
-                f(dat_file,os.path.join(dir, 'Figures'))
-
+    #   obtaines all the subdirectories in dir
+    subdir = os.listdir(dir)
+    # if there are subfolders, this function recursively searches through each subfolder until the base is found which contains the acs_data.h5 file
+    if 'acs_data.h5' not in subdir:
+        for item in subdir:
+            if os.path.isdir(os.path.join(dir, item)):
+                apply_fun(os.path.join(dir, item), function,args)
     else:
-        print('h5 file does not exist in ' + dir)
-        # uncomment the following lines if a case was run without acquiring acoustic data (acs_data.h5 does not exist in folder)
-        # with h5py.File(os.path.join(dir, 'acs_data.h5'),'a') as dat_file:
-        #     if append_perf is True:
-        #         append_perf_dat(dat_file,dir)
+        print(f'h5 file exists in {dir}')
+        # imports data from the h5 file
+        data = import_h5(os.path.join(dir, 'acs_data.h5'))
+        
+        # if function list is not empty declare the following args, otherwise just append performance data
+        if function:
+            # if mic numbers are not explicitly provided as an arguments selects all mics
+            if args.mics is None:
+                args.mics = np.arange(len(data['Acoustic Data'])-1)
+
+            # if frequency resolution is not explicitly provided as an arguments it is set to the narrowband frequency resolution
+            if args.frequency_resolution is None:
+                args.frequency_resolution = data['Sampling Rate']/data['Acoustic Data'].shape[-1]
+            
+            args.nperseg = int(data['Sampling Rate']/args.frequency_resolution)
+
+            if args.end_t is None:
+                args.end_t = data['Acoustic Data'].shape[-1]/data['Sampling Rate']
+            args.start_ind = int(args.start_t*data['Sampling Rate'])
+            args.end_ind = int(args.end_t*data['Sampling Rate'])
+            # sets to true in order to plot figures
+            args.plot = True
+        # If the performance data is not yet appended to the data dictionary it does so
+        if 'Performance_Data' not in data:
+            
+            append_perf_dat(data, dir)
+            if 'ZSYNC' in data:
+            # removes the ZSYNCH dataset since it's not used
+                data.pop('ZSYNC')
+            # zeros the time array
+            data['Performance_Data']['Time (s)'] = data['Performance_Data']['Time (s)']-data['Performance_Data']['Time (s)'][0]
+            
+            # applies sensitivities to raw acoustic measurements 
+            data['Acoustic Data'] =(data['Acoustic Data'].T/(data['Sensitivities']*1e-3)).T
+
+            # writes out the new h5 file containing the performance and acoustics data
+            write_h5(os.path.join(dir,'acs_data.h5'), data)
+
+            #   Makes a new 'Figures' folder in the current directory
+            # if 'Figures' not in subdir:
+            #     # creates a directory for storing results
+            #     os.mkdir(os.path.join(dir, 'Figures'))
+                # deletes the two lvm files since they are not used
+            if 'acs_data.lvm' in subdir:
+                os.remove(os.path.join(dir,'acs_data.lvm'))
+            if 'SPL_FFT.lvm' in subdir:
+                os.remove(os.path.join(dir,'SPL_FFT.lvm'))
+        
+        data['case_dir'] = dir  
+        # applies the provided functions to the dataset
+        for f in function:
+            f(data)
 
 
-
-def append_perf_dat(dat_file, dir,col = 27):
+def append_perf_dat(dat_file, dir,col = 29):
     '''
     This function appends the performance and all the other data contained in Full.txt, which is exported by default
     from the LabVIEW data acquisition vi (UAV Control V4.vi) to the acs_data.h5 file.
@@ -82,300 +178,92 @@ def append_perf_dat(dat_file, dir,col = 27):
     #   splits the Full.txt file with \t and \n as delimiters
     data_split = re.split('\t|\n', data)
     #   reshapes a single-dimensional list into the right dimensional array
-    data_split = np.reshape(data_split[:-1], (int(len(data_split[:-1]) / col), col))
     #   extracts header of each data set in Full.txt
-    header = data_split[0]
-    #   changes numerical data from type str to float64
-    data_split = data_split[1:].astype(float)
+    header = data_split[:col]
+
+    data_split = np.reshape(data_split[col:-1], (int(len(data_split[col:-1]) / col), col)).astype(float)
     #   loops through each dataset contained in Full.txt
-    for i, dat in enumerate(data_split.transpose()):
-        #   writes data to a new dataset titled with each header
-        dat_file.create_dataset(header[i], data=dat, shape=np.shape(dat))
+    #   appends data in of each column of Full.txt to the data dictionary
+    dat_file.update({'Performance_Data':dict(zip(header, data_split.T))})
 
-def hann(N, fs):
-    '''
-    This function returns the rms normalized hanning window consisting of N points. This normalization ensures that after the window function is applied, when the spectral density is integrated it would still yield the mean square of the time series.
-    :param N: Number of points
-    :param fs: sampling frequency [Hz]
-    :return:
-    :param W: rms normalized window function
-    '''
-    dt = 1 / fs
-    hann = 1 - np.cos(2 * np.pi * np.arange(N) * dt / (N * dt))
-    W = hann / np.sqrt(1 / N * np.sum(hann ** 2))
-    return W
 
-def tseries(xn, fs,t_lim = [0,1], levels = [-0.5,0.5],save_fig = True, save_path = ''):
-    '''
-    This function generates a figure of the pressure time history
-    :param xn: time series [Pa]
-    :param fs: sampling frequency [Hz]
-    :param t_lim: extents of time axis, supplied as a list [s]
-    :param levels: limits of vertical axis, supplied as a list [Pa]
-    :param save_fig: set to true to save the figure
-    :param save_path: path where to save the figure
-    :param plot: set to true in order to generate the time series plot
-    :return:
-    '''
+def p_tseries(data,args):
+    
+    t = np.arange(data['Acoustic Data'].shape[-1])*data['Sampling Rate']**-1
 
-    t = np.arange(len(xn))*fs**-1
-    if np.shape(xn) == (len(xn),1):
-        xn = np.expand_dims(xn,axis = 1)
-
-    for i in range(np.shape(xn)[1]):
+    if args.plot():
         fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
-        plt.subplots_adjust(bottom=0.15)
-        ax.plot(t[int(fs*t_lim[0]):int(fs*t_lim[1])], xn[int(fs*t_lim[0]):int(fs*t_lim[1]),i])
-        ax.axis([t_lim[0],t_lim[1],levels[0],levels[1]])
-        ax.set_xlabel('Time (sec)')
-        ax.set_ylabel('$x_n [Pa]$')
+        plt.subplots_adjust(left=0.15,bottom=0.15,right = 0.8)
+        lines = ax.plot(t,data['Acoustic Data'][args.mics].T)
+        for i,mic in enumerate(args.mics):
+            lines[i].set(color=np.roll(default_colors,-i)[0], linestyle=np.roll(linestyle,-i)[0], label=f"Mic {mic}")
         ax.grid()
-        ax.set_title('Mic: '+str(i+1))
+        ax.set(xlabel = r'$Time \ [sec]$',ylabel = r'$Pressure \ [Pa]$')
+        ax.legend(loc='center left', bbox_to_anchor=(1.005, 0.5),prop={'size': 12})
+        plt.savefig(os.path.join(data['case_dir'],'p_tseries.png'),format = 'png')
+        plt.close()
 
-        if save_fig is True:
-            plt.savefig(os.path.join(save_path,'tseries_'+str(i+1)+'.png'),format='png')
-            plt.close()
+def perf_tseries(data,args):
+    
+    fs = 1/np.diff(data['Performance_Data']['Time (s)'][:2])[0]
+    LE_ind,_,_,rpm_nom,_ = eval_rpm(data['Performance_Data']['Motor2 RPM'],fs,start_t = 0,end_t = data['Performance_Data']['Time (s)'][-1])
+    t = (data['Performance_Data']['Time (s)'][LE_ind][1:]+data['Performance_Data']['Time (s)'][LE_ind][:-1])/2
+    rpm = np.diff(data['Performance_Data']['Time (s)'][LE_ind])**-1*60
+    
 
-
-def PSD(xn, fs):
-    '''
-    This function computes the single and double sided PSD from a given time series
-    :param xn: time series
-    :param fs: sampling frequency [Hz]
-    :return:
-    :param f: frequency vector [Hz]
-    :param Sxx: double-sided spectral density [WU^2/Hz]
-    :param Gxx: single-sided spectral densities [WU^2/Hz]
-    '''
-
-    dt = fs**-1
-    df = (len(xn)*dt)**-1
-
-    #   Frequency vector
-    f = np.arange(int(len(xn) /2)) * df
-    #   Computes the linear spectrum
-    Xm = fft(xn,axis = 0) * dt
-    #   Computes double-sided PSD
-    Sxx = 1/(len(xn)*dt) * np.conj(Xm) * Xm
-    #   Computes single-sided PSD
-    Gxx = Sxx[:int(len(xn) / 2)]
-    Gxx[1:-1] = 2 * Gxx[1:-1]
-
-    return f, Xm, Sxx, Gxx
-
-def msPSD(xn, fs, df = 5, win = True, ovr = 0, f_lim =[10,5e3], levels = [0,100],save_fig = True, save_path = '',plot = True):
-    '''
-    This function computes the single and double sided mean-square averaged PSD for a given time series
-    :param xn: time series
-    :param fs: sampling frequency [Hz]
-    :param N: number of points per averaging segment
-    :param win: applies Hanning window if set equal to 1
-    :param ovr: percentage of overlap between adjacent bins
-    :return:
-    :param f: frequency vector
-    :param Gxx_avg: mean-square averaged single-sided PSD
-    '''
-
-    if len(np.shape(xn)) == 1:
-        xn = np.expand_dims(xn,axis = 1)
-    #   points per record
-    N = int((df*fs**-1)**-1)
-    #   constructs frequency array
-    f = np.arange(int(N/2)) * df
-    #   returns rms normalized Hanning window if no window is applied an array of ones is returned
-    if win is True:
-        W = hann(N, fs)
-    else:
-        W = np.ones(N)
-    if ovr == 0:
-        #   number of records
-        Nfft = int(np.floor(len(xn) / N))
-        #   ensures that the length of the time series can accommodate the desired number of averages
-        assert (N * Nfft <= len(xn), 'Desired number of averages exceeds the length of the time series')
-        #   reshapes time series into a matrix of dimensions Nfft x N
-        xn = np.reshape(xn[:int(N * Nfft),:], (int(N), Nfft,np.shape(xn)[1]), order='F')
-        #   applies window and computes linear spectrum
-        Xm = (fft(xn.transpose()) * fs ** -1).transpose()
-    else:
-        #   number of records
-        Nfft = int(np.floor((len(xn) - N) / ((1 - ovr) * N)))
-        #   initiates matrix to store linear spectrum
-        Xm = np.zeros((N,Nfft + 1,np.shape(xn)[1]), complex)
-        #   computes linear spectrum for each record and populates matrix
-        for i in range(Nfft + 1):
-            Xm[:,i,:] = (fft(xn[int(i * (1 - ovr) * N):int(i * (1 - ovr) * N + N),:].transpose() * W) * fs**-1).transpose()
-
-    #   computes double-sided PSD
-    Sxx = (fs**-1*N)**-1 * abs(Xm) ** 2
-    #   computes single-sided PSD
-    Gxx = Sxx[:int(N / 2),:,:]
-    Gxx[1:-1,:,:] = 2 * Gxx[1:-1,:,:]
-    #   averages the single-sided PSD of all segments
-    Gxx_avg = 1 / Nfft * np.sum(Gxx, axis=1)
-
-    if plot is True:
-        for i in range(np.shape(Gxx_avg)[1]):
-            fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
-            plt.subplots_adjust(bottom=0.15)
-            ax.plot(f, 10 * np.log10(Gxx_avg[:,i]*df / 20e-6 ** 2))
-            ax.set_xscale('log')
-            ax.axis([f_lim[0],f_lim[1],levels[0],levels[1]])
-            ax.set_xlabel('Frequency (Hz)')
-            ax.set_ylabel('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
-            ax.grid()
-            ax.set_title('Mic: '+str(i+1))
-
-            if save_fig is True:
-                plt.savefig(os.path.join(save_path,'spectra_m'+str(i+1)+'.png'),format='png')
-                plt.close()
-
-    return f,Xm,Sxx,Gxx,Gxx_avg
+    if args.plot:
+        fig, ax = plt.subplots(3,1,figsize = (6.4,5))
+        plt.subplots_adjust(left=0.2,bottom=0.15,hspace=0.4)
+        ax[0].plot(data['Performance_Data']['Time (s)'],data['Performance_Data']['Motor2 Thrust (Nm)'])
+        ax[1].plot(data['Performance_Data']['Time (s)'],data['Performance_Data']['Motor2 Torque (Nm)'])
+        ax[2].plot(t,rpm)
+        ax[0].set(ylabel = r'$Thrust \ [N]$',xticklabels = [],ylim =np.round([data['Performance_Data']['Motor2 Thrust (Nm)'].min()-2,data['Performance_Data']['Motor2 Thrust (Nm)'].max()+2]))
+        ax[1].set(ylabel = r'$Torque \ [Nm]$',xticklabels = [],ylim = np.round([data['Performance_Data']['Motor2 Torque (Nm)'].min()-.02,data['Performance_Data']['Motor2 Torque (Nm)'].max()+.02],2))
+        ax[-1].set(xlabel = r'$Time \ [sec]$',ylabel = r'$RPM$',ylim = np.round([rpm_nom-25,rpm_nom+25]))
+        [ax[i].grid() for i in range(3)]
+        plt.savefig(os.path.join(data['case_dir'],'perf_tseries.png'),format = 'png')
+        plt.close()
 
 
-def spectrogram(xn, fs, df, win = True, ovr= 0,t_lim = '', f_lim = [0,10e3],levels = [0,100],save_fig = True, save_path = '' ,plot = True):
-    '''
-    This function computes the spectrogram of a given time series
-    :param xn: time array
-    :param fs: sampling frequency [Hz]
-    :param df: frequency resolution [hz]
-    :param win: window function (T/F) (only the Hanning window is supported at this time)
-    :param ovr: percentage of overlap between subsequent records
-    :return:
-    :param t: resultant time vector corresponding to the midpoint of each record [s]
-    :param f: frequency vector [Hz]
-    :param Gxx: resultant matrix of single-sided spectral densities [N x Nfft] [V^2/Hz]
-    '''
+def psd(data,args):
 
-    N = (fs**-1*df)**-1
-    t = np.arange(len(xn)) * fs**-1
-    f,Xm,Sxx,Gxx,Gxx_avg = msPSD(xn,fs,df =df,ovr = ovr,save_fig=0,win = win,plot = False)
-    t = t[int(N / 2):-int(N / 2)][::int((1 - ovr) * N)]
+    f,pxx = welch(data['Acoustic Data'][args.mics,args.start_ind:args.end_ind], fs=data['Sampling Rate'], window=args.window, nperseg=args.nperseg, noverlap=int(args.overlap*args.nperseg), nfft=None, detrend='constant', return_onesided=True, scaling='density', axis=-1, average='mean')
+    if args.plot:
+        fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        plt.subplots_adjust(left=0.1,bottom=0.15,right = 0.8)
+        lines = ax.plot(f,10*np.log10(pxx.T/20e-6**2))
+        for i,mic in enumerate(args.mics):
+            lines[i].set(color=np.roll(default_colors,-i)[0], linestyle=np.roll(linestyle,-i)[0], label=f"Mic {mic}")
+        ax.set(xlabel = r'$Frequency \ [Hz]$',ylabel = r'$PSD, \ dB/Hz \ (re: \ 20 \mu Pa)$',xlim = [10,10e3],xscale = 'log')
+        ax.legend(loc='center left', bbox_to_anchor=(1.005, 0.5),prop={'size': 12})
+        ax.grid()
+        plt.savefig(os.path.join(data['case_dir'],'psd_spectrum.png'),format = 'png')
+        plt.close()
+    return f, pxx
 
-    if plot is True:
-        # levels = np.arange(levels[0], levels[1], 2)
-        for i in range(np.shape(Gxx)[2]):
+
+def spectrogram(data,args):
+
+    win = get_window(window = args.window, Nx = args.nperseg, fftbins=True)
+    SFT = ShortTimeFFT(win = win, hop = int(args.nperseg-args.overlap*args.nperseg) , fs =data['Sampling Rate'] , fft_mode='onesided', scale_to='psd')
+    Gxx = SFT.spectrogram(data['Acoustic Data'][args.mics,args.start_ind:args.end_ind])
+
+    if args.plot:
+        levels = np.linspace(0, 70, 71)
+
+        for i,mic in enumerate(args.mics):
             fig, ax = plt.subplots(1, 1, figsize=(6.4, 4.5))
-            plt.subplots_adjust(bottom=0.15)
-            spec = ax.contourf(t, f, 10 * np.log10(np.squeeze(Gxx[:,:-1,i])*df / 20e-6 ** 2), cmap='hot', levels=levels)
-            ax.set_ylabel('Frequency (Hz)')
-            ax.set_xlabel('Time (sec)')
-
-
-            if isinstance(t_lim, list):
-                ax.set_xlim([t_lim[0], t_lim[-1]])
-            else:
-                ax.set_xlim([t[0], t[-1]])
-
-            ax.set_ylim(f_lim[0], f_lim[1])
-            ax.set_yscale('log')
-            # ax.set_title('Mic: '+str(i+1))
+            plt.subplots_adjust(left = 0.15,bottom=0.15,right =1)
+            spec = ax.contourf(SFT.t(len(data['Acoustic Data'][0,args.start_ind:args.end_ind])), SFT.f, 10 * np.log10(Gxx[i]* np.diff(SFT.f)[:1]/ 20e-6 ** 2), cmap='hot', levels=levels)
+            ax.set(ylabel = r'$Frequency \ [Hz]$',xlabel = r'$Time \ [sec]$',title = rf'$Mic \ {mic}$',xlim =[0,None],ylim =[10,1e3])
             cbar = fig.colorbar(spec)
-            cbar.set_ticks(np.arange(levels[0],levels[-1]+1,5))
-            cbar.set_ticklabels(np.arange(levels[0],levels[-1]+1,5))
-
-            cbar.set_label('$SPL, \: dB\: (re:\: 20 \: \mu Pa)$')
-
-
-            if save_fig is True:
-                plt.savefig(os.path.join(save_path, f'spectrogram_m{str(i + 1)}.png'),format='png')
-                plt.savefig(os.path.join(save_path, f'spectrogram_m{str(i + 1)}.eps'),format='eps')
-
+            cbar.set_label(r'$PSD, \ dB/Hz \ (re: \ 20 \mu Pa)$')
+            plt.savefig(os.path.join(data['case_dir'],f'spectrogram_m{mic}.png'),format = 'png')
             plt.close()
 
-    return t, f, np.transpose(Gxx)
+    return SFT.t,SFT.f,Gxx
 
-def filt_response(bb,aa,fs,N,plot=True):
-    '''
-    This function returns the frequency response of a moving average filter by computing the linear spectrum of the impulse response.
-    :param bb: output (numerator) coefficients of the frequency response, multiplied by dt
-    :param aa: input (denominator) coefficients of the frequency response
-    :param fs: sampling frequency [Hz]
-    :param N: length of the impulse time series [points]
-    :return:
-    :param f: frequency vector [Hz]
-    :param y: impulse time series
-    :param h: frequency response
-    :param phase: phase [deg]
-
-    '''
-    impulse = np.zeros(int(N))
-    impulse[0] = fs
-    y = lfilter(bb, aa, impulse)
-    h = (fft(y)*fs**-1)[:int(N/2)]
-    phase = np.angle(h) * 180 / np.pi
-    f = np.arange(N/2)*(N*fs**-1)**-1
-
-    if plot:
-        fig, ax = plt.subplots(2, 1, figsize=(6.4, 4.5))
-        ax[0].plot(f, abs(h))
-        ax[0].set_ylabel('Magnitude')
-        ax[0].tick_params(axis='x', labelsize=0)
-        ax[0].grid()
-        ax[0].set_xscale('log')
-        # ax[0].set_xlim(10, 5e3)
-
-        ax[1].plot(f, phase)
-        ax[1].set_ylabel('Phase [$\circ$]')
-        ax[1].set_xlabel('Frequency [Hz]')
-        ax[1].grid()
-        ax[1].set_xscale('log')
-        # ax[1].set_xlim(10, 5e3)
-
-    return f,y,h,phase
-
-def xCorr(xn, yn, xfs, yfs):
-    '''
-    This function computes the circular cross correlation between two time series in the frequency domain. If a
-    simple cross correlation is required, zero-pad both time series doubling their lengths.
-    :param xn: first time series
-    :param yn: second time series
-    :param xfs: sampling rate of first time series
-    :param yfs: sampling rate of second time series
-    :return:
-    :param Rxy: cross correlation (simple if the time series are zero padded)
-    '''
-
-    # assert len(xn) * xfs ** -1 == len(yn) * yfs ** -1, 'Ensure that the record lengths of both time series are equal'
-    Xm = fft(xn)*xfs**-1
-    Ym = fft(yn)*yfs**-1
-    Sxy = 1 / (len(xn) * xfs**-1) * np.conj(Xm) * Ym
-    Rxy = ifft(Sxy) * xfs
-    return Rxy
-
-
-def hilbert(xn,fs):
-    '''
-    This function applies the hilbert transform to a given time series and returns the envelope and instantaneous phase and frequency.
-    :param xn: time series
-    :param fs: sampling frequency [Hz]
-    :return:
-    :param envelope: envelope of the time series
-    :param phi: instantaneous phase [degrees]
-    :param f: instantaneous frequency
-
-    '''
-
-    #   temporal resolution
-    dt = fs**-1
-    #   computes linear spectrum
-    Xm = fft(xn) * dt
-
-    #   generates window of the Hilbert transform
-    W_hilbert = np.concatenate((np.ones(int(len(xn) / 2)) * 2, np.zeros(int(len(xn) / 2))), axis=0)
-    W_hilbert[0] = 1
-    W_hilbert[int(len(xn) / 2)] = 1
-
-    # computes the inverse fft of the product between the linear spectrum and the Hilbert transform window (
-    # equivalent to a time shift in the time domain)
-    zh = ifft(Xm * W_hilbert) * dt ** -1
-
-    envelope = abs(zh)
-    phi = np.unwrap(np.angle(zh))
-    f = 1 / (2 * np.pi) * np.diff(phi) * 1 / dt
-
-    return f,phi,envelope
-
-def rpm_eval(ttl,fs,start_t,end_t):
+def eval_rpm(ttl,fs,start_t,end_t):
     '''
     This function evaluates the average rotational rate for a segment of data based on the tac pulse signal.
     :param ttl: raw tac time series
@@ -384,7 +272,6 @@ def rpm_eval(ttl,fs,start_t,end_t):
     :param end_t: end time of the segment under consideration [s]
     :return:
     '''
-
     # identifies the indices corresponding to the leading edge of each pulse
     LE_ind = np.squeeze(np.where(np.diff(ttl) == 1))
     # returns a list containing the starting and ending index
@@ -396,7 +283,7 @@ def rpm_eval(ttl,fs,start_t,end_t):
     # confidence interval of the the rpm (95% level of certainty)
     u_rpm = 1.94*np.std(rpm)/np.sqrt(len(LE_ind)-1)
 
-    return LE_ind, lim_ind, rpm_nom, u_rpm
+    return LE_ind, lim_ind,rpm, rpm_nom, u_rpm
 
 def upsample(xn, fs, N):
     '''
@@ -404,40 +291,26 @@ def upsample(xn, fs, N):
     :param xn: times series
     :param fs: sampling rate [Hz]
     :param N: number of points to upsample to
-    :return:
+    :return:s
     '''
 
-    T = len(xn)*fs**-1
-    fs1 = N/T
-    Xm = (fft(xn.transpose())*fs**-1).transpose()
-    if len(Xm) != N:
+    fs_upsample = N*fs/xn.shape[-1]
+    if fs != fs_upsample:
+        Xm = fft(xn,axis = -1).T*fs**-1
+        Xm_upsample = np.zeros((N,xn.shape[0]),dtype = complex)
         if len(Xm)%2 ==0:
-            Xm = np.concatenate((Xm[:int(len(Xm)/2)], np.zeros((N-len(Xm),np.shape(Xm)[1])), Xm[int(len(Xm)/2):]))
+            Xm[int(len(Xm)/2)]/=2 
+            Xm_upsample[:int(len(Xm)/2)+1] = Xm[:int(len(Xm)/2)+1]
+            Xm_upsample[-int(len(Xm)/2):] = Xm[int(len(Xm)/2):]
         else:
-            Xm = np.concatenate((Xm[:int(len(Xm)/2)],np.ones((1,np.shape(Xm)[1]))*Xm[int(len(Xm)/2)]/2, np.zeros((N-len(Xm),np.shape(Xm)[1])),np.ones((1,np.shape(Xm)[1]))*Xm[int(len(Xm)/2)]/2, Xm[int(len(Xm) / 2)+1:]))
-    xn = ifft(Xm.transpose()).transpose()*fs1
+            Xm_upsample[:int(len(Xm)/2)+1] = Xm[:int(len(Xm)/2)+1]
+            Xm_upsample[-int(len(Xm)/2):] = Xm[int(len(Xm)/2)+1:]
 
-    return xn,Xm
+        xn = ifft(Xm_upsample.T,axis =-1)*fs_upsample
+    return xn
 
-def SD(Xm,fs):
-    '''
-    This function computes the single-sided spectral density (Gxx) from a linear spectrum.
-    :param Xm: complex two-sided linear spectrum [Pa]
-    :param fs: sampling rate [Hz]
-    :return:
-    '''
 
-    # number of points in record
-    N = len(Xm)
-    # temporal resolution
-    dt = fs ** -1
-    # single sided power spectral density [Pa^2/Hz]
-    Sxx = (dt * N) ** -1 * abs(Xm) ** 2
-    Gxx = Sxx[:int(N / 2)]
-    Gxx[1:-1] = 2 * Gxx[1:-1]
-    return Gxx
-
-def harm_extract(xn, tac_ind, fs, rev_skip, harm_filt,filt_shaft_harm,Nb):
+def tonal_separation(data,args,**kwargs):
     '''
     This function extracts te tonal and broadband components of a signal. The noise component separation is done in
     the frequency domain. The signal is first parsed on a rev-to-rev basis. The linear spectrum of each rev is then
@@ -457,81 +330,198 @@ def harm_extract(xn, tac_ind, fs, rev_skip, harm_filt,filt_shaft_harm,Nb):
     :return:
     '''
 
+    def filt_harmonics(xn,harmonics):
+        Xm_upsampled = fft(xn,axis = 1)
+        if harmonics[0]!=0:
+            Xm_upsampled[:,:harmonics[0]+1] = 0
+            Xm_upsampled[:,-harmonics[0]:] = 0
+        else:
+            Xm_upsampled[:,:harmonics[0]+1] = 0
+            # Xm_upsampled[:,-1] = 0
 
-    if len(np.shape(xn)) == 1:
-        xn = np.expand_dims(xn,axis = 1)
+        Xm_upsampled[:,harmonics[1]+1:-harmonics[1]] = 0
+        xn = np.real(ifft(Xm_upsampled,axis = 1))
+        return xn
 
-    rev_skip = rev_skip+1
-    dtac_ind = np.diff(tac_ind[::rev_skip])
-    N = np.max(dtac_ind)
-    N_avg = np.mean(dtac_ind)
+    # fs = 1/np.diff(data['Performance_Data']['Time (s)'][:2])[0]
+    # LE_ind,_,rpm,_,_ = eval_rpm(data['Performance_Data']['Motor2 RPM'],fs,start_t = data['Performance_Data']['Time (s)'][0],end_t = data['Performance_Data']['Time (s)'][-1])
 
-    fs1 = N / N_avg * fs
-    dt = fs1 ** -1
-    df = (N * dt) ** -1
+    # fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+    # plt.subplots_adjust(left=0.15,bottom=0.15,right = 0.8)
+    # ax.plot(np.diff(data['Performance_Data']['Time (s)']))
+    
+    # t_perf = 0.5*(data['Performance_Data']['Time (s)'][LE_ind[1:]]+data['Performance_Data']['Time (s)'][LE_ind[:-1]])
+    t_perf = np.arange(len(data['Performance_Data']['Motor2 RPM']))*data['Performance_Data']['Time (s)'][-1]/(len(data['Performance_Data']['Motor2 RPM'])-1)
+    fs = 1/np.diff(t_perf[:2])[0]
 
-    xn_list = [xn[tac_ind[i]:tac_ind[i + 1]] for i in range(len(tac_ind[::rev_skip]) - 1)]
+    LE_ind,_,rpm,_,_ = eval_rpm(data['Performance_Data']['Motor2 RPM'],fs,start_t = data['Performance_Data']['Time (s)'][0],end_t = data['Performance_Data']['Time (s)'][-1])
+    t_perf = data['Performance_Data']['Time (s)'][LE_ind]
 
-    out = np.array(list(map(lambda x: upsample(x, fs, N), xn_list)))
-    Xn_avg = np.mean(out[:, 0, :, :], axis=0)
-    Xm_avg = np.mean(out[:, 1, :, :], axis=0)
-    u = 1.94*np.std(out[:, 1, :, :], axis=0)/np.sqrt(len(tac_ind)-1)
+    t_perf = t_perf[(t_perf>=args.start_t) & (t_perf<=args.end_t)]
+    t_acs = (np.arange(data['Acoustic Data'].shape[-1])*data['Sampling Rate']**-1)[args.start_ind:args.end_ind]
 
-    Xm_bb = out[:, 1, :, :]-Xm_avg
-    Xn_bb = (ifft(Xm_bb.transpose(),axis = 1).transpose()*fs1).reshape(np.shape(Xm_bb)[0]*np.shape(Xm_bb)[1],np.shape(Xm_bb)[2])
+    rev_ind = np.abs(t_perf[...,None]-t_acs).argmin(axis = -1)
+    N_upsample = np.diff(rev_ind[1:-1]).max()
+    fs_upsample = N_upsample / np.diff(rev_ind) * data['Sampling Rate']
 
-    if isinstance(harm_filt, list):
+    acs_data_split = np.split(data['Acoustic Data'][args.mics,args.start_ind:args.end_ind], rev_ind,axis = -1)
+    N_records = len(acs_data_split)-2
+    xn_upsampled= np.asarray([upsample(record,data['Sampling Rate'],N_upsample) for record in acs_data_split[1:-1]]).transpose(1,2,0)
+    
+    if args.align:
+        xn_upsampled_filt = filt_harmonics(xn_upsampled,[1,2])
+        # appends zeros to time series to avoid performing a circular cross-correlation 
+        xn_upsampled_zero_pad = np.concatenate((xn_upsampled_filt[0],np.zeros(xn_upsampled_filt[0].shape)),axis = 0)
+        # computes the cross-correlation between each record or rotor revolution relative to the first
+        t,Rxy,_ =correlation(X = xn_upsampled_zero_pad[:,0],Y = xn_upsampled_zero_pad.T,fs =fs_upsample ,auto = False)
+        # Peak of cross-correlation is the time delay by which to shift the other records
+        t_shift = t[Rxy.argmax(axis = -1),np.arange(len(Rxy))]
+        # Creates an array of indicies to shift the original signal by 
+        shift_ind = (np.arange(N_upsample) + (t_shift*fs_upsample).astype(int)[:, None]).T % N_upsample
+        # shifts the upsampled signal by the computed time delays
+        xn_upsampled = np.take_along_axis(xn_upsampled, shift_ind[None], axis=1)
+    
+    if args.filter_harmonics is not None:
+        xn_upsampled = filt_harmonics(xn_upsampled,args.filter_harmonics)
 
-        Xm_avg[:harm_filt[0]] = 0
-        Xm_avg[-harm_filt[0]+1:] = 0
-        Xm_avg[harm_filt[1]+1:-harm_filt[1]] = 0
+    # computes the average across all records to extract tonal noise component
+    xn_avg = np.real(np.mean(xn_upsampled,axis = -1))
 
-        u[:harm_filt[0]] = 0
-        u[-harm_filt[0]+1:] = 0
-        u[harm_filt[1]+1:-harm_filt[1]] = 0
 
-        if filt_shaft_harm:
-            Xm_avg[1::Nb] = 0
+    if not N_upsample%2:
+        Xm_upsampled =  fft(xn_upsampled,axis = 1)[:,:int(N_upsample/2)+1]/fs_upsample
+    else:
+        Xm_upsampled =  fft(xn_upsampled,axis = 1)[:,:int(N_upsample/2)]/fs_upsample
+    
+    Xm_avg = np.mean(Xm_upsampled,axis = -1)
+    pxx_tonal = (fs_upsample.mean()/N_upsample)*np.abs(Xm_avg)**2
+    pxx_tonal[:,1:-1] = 2*pxx_tonal[:,1:-1] 
 
-    f = np.arange(int(N / 2)) * df
+    Gxx = (fs_upsample.mean()/N_upsample)*np.abs(Xm_upsampled)**2
+    Gxx[:,1:-1] = 2*Gxx[:,1:-1]
 
-    Xn_avg_filt = ifft(Xm_avg,axis = 0)*fs
-    out = list(map(lambda x: SD(x,fs1),[Xm_avg,abs(Xm_avg)-u,abs(Xm_avg)+u]))
-    spl = 10 * np.log10(out[0]*df / 20e-6 ** 2)
+    # # jacobian of single-sided power spectral density (unscaled by period)
+    # Gxx_jac = 2*np.asarray([np.real(Xm_avg),np.imag(Xm_avg)])
+    # # computes the covariance matrix of the linear spectrum
+    # Xm_diff = Xm_upsampled-np.expand_dims(Xm_avg,axis = -1)
+    # Xm_cov = np.asarray([np.real(Xm_diff),np.imag(Xm_diff)])
+    # # covariance matrix of the average linear spectrum, hence why it is divided by the number of records
+    # Xm_cov = 1/(N_records-1)*np.einsum("imfk,jmfk->fmij",Xm_cov,Xm_cov)/N_records
+    # # variance in the power spectral density (unscaled by period)
+    # Gxx_var = np.einsum("imf,fmij,jmf->mf",Gxx_jac,Xm_cov,Gxx_jac)
 
-    u_low = spl-10 * np.log10(out[1]*df / 20e-6 ** 2)
-    u_high = 10 * np.log10(out[2]*df / 20e-6 ** 2)-spl
+    # this is another estimate for the variance, here the linear spectrum are assumed to follow a complex normal distribution
+    Gxx_var = 2*np.var(Xm_upsampled,axis = -1)*np.abs(Xm_avg)**2/N_records
+    
+    Gxx_err =(fs_upsample.mean()/N_upsample)*1.96*np.sqrt(Gxx_var)
+    Gxx_err[:,1:-1] = 2*Gxx_err[:,1:-1]
 
-    return f,fs1,spl,u_low, u_high, Xn_avg, Xm_avg,Xn_avg_filt, Xn_bb
+    # lower and upper error bounds of the PSD
+    yerr = np.asarray([pxx_tonal/(pxx_tonal-Gxx_err),(pxx_tonal+Gxx_err)/pxx_tonal]).transpose(1,0,-1)
+    neg_yerr_ind = np.where(yerr<0)
+    yerr[neg_yerr_ind] = 1
+    yerr[(neg_yerr_ind[0],np.ones(len(neg_yerr_ind[1]),dtype=int),neg_yerr_ind[2])] = 1
 
-def ffilter(xn,fs, btype, fc,filt_shaft_harm,Nb):
+    # # computes the PSD of the average time series using welchs method
+    # f_tonal,pxx_tonal = welch(xn_avg, fs=fs_upsample.mean(), window='boxcar', nperseg=N_upsample, noverlap=0, nfft=None, detrend='constant', return_onesided=True, scaling='density', axis=-1, average='mean')
+
+    xn_bb= np.real(xn_upsampled.T-xn_avg.T).T.reshape((len(args.mics),int(N_upsample*len(acs_data_split[1:-1]))),order = 'F')
+    f_bb,pxx_bb = welch(xn_bb[:,args.start_ind:args.end_ind], fs=data['Sampling Rate'], window=args.window, nperseg=args.nperseg, noverlap=int(args.overlap*args.nperseg), nfft=None, detrend='constant', return_onesided=True, scaling='density', axis=-1, average='mean')
+    df_bb = np.diff(f_bb[:2])[0]
+
+
+    t = np.arange(N_upsample)/fs_upsample.mean()
+    t_upsample = np.arange(N_upsample)[:,None]/fs_upsample
+
+    f_tonal = np.arange(len(Gxx[0]))*fs_upsample.mean()/N_upsample
+    df_tonal = np.diff(f_tonal[:2])[0]
+
+
+    if args.plot:
+
+        f,pxx = welch(data['Acoustic Data'][args.mics,args.start_ind:args.end_ind], fs=data['Sampling Rate'], window=args.window, nperseg=args.nperseg, noverlap=int(args.overlap*args.nperseg), nfft=None, detrend='constant', return_onesided=True, scaling='density', axis=-1, average='mean')
+        df = np.diff(f[:2])[0]
+
+        fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        plt.subplots_adjust(left=0.15,bottom=0.15,right = 0.8)
+        lines = ax.plot(t,xn_avg.T)
+        for i,mic in enumerate(args.mics):
+            lines[i].set(color=np.roll(default_colors,-i)[0], linestyle=np.roll(linestyle,-i)[0], label=f"Mic {mic}")
+        ax.grid()
+        ax.set(xlabel = r'$Time \ [sec]$',ylabel = r'$Pressure \ [Pa]$')
+        ax.legend(loc='center left', bbox_to_anchor=(1.005, 0.5),prop={'size': 12})
+        plt.savefig(os.path.join(data['case_dir'],'p_avg_tseries.png'),format = 'png')
+        plt.close()
+
+        for i,mic in enumerate(args.mics):
+            
+            fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+            plt.subplots_adjust(left=0.15,bottom=0.15)
+            # ax.scatter(f_tonal,10*np.log10(pxx_tonal[i]*df_tonal/20e-6**2),c = default_colors[3],zorder=3)
+            # ax.scatter(f_tonal[:-1],10*np.log10(Gxx.mean(axis = 1)[i]*df_tonal/20e-6**2),c = default_colors[2],zorder=3)
+
+            ax.errorbar(f_tonal, 10*np.log10(pxx_tonal[i]*df_tonal/20e-6**2), yerr=10*np.log10(yerr[i]), fmt='o',color = default_colors[3],ecolor = default_colors[3],capsize=6,capthick=2)
+
+            ax.plot(f,10*np.log10(pxx[i]*df/20e-6**2))
+            # ax.plot(f_bb,10*np.log10(pxx_bb[i]*df_bb/20e-6**2))
+            ax.set(xlabel = r'$Frequency \ [Hz]$',ylabel = r'$SPL, \ dB \ (re: \ 20 \mu Pa)$',title = rf'$Mic \ {mic}$',xscale = 'linear',xlim = [10,5e3],ylim = (0,None))
+            ax.grid()
+            plt.savefig(os.path.join(data['case_dir'],f'tonal_sep_m{mic}.png'),format = 'png')
+            plt.close()
+
+
+        for i,mic in enumerate(args.mics):
+            fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+            plt.subplots_adjust(left=0.175,bottom=0.15)
+            ax.plot(t_upsample[:,::20],np.real(xn_upsampled[i][:,::20]),alpha = 0.5,c = 'gray')
+
+            ax.plot(t,xn_avg[i],linewidth = 1,c = 'black')
+            ax.set(title = rf'$Mic \ {mic}$',xlabel = r'$Time \ [sec]$',ylabel = r'$Pressure \ [Pa]$')
+            ax.grid()
+            plt.savefig(os.path.join(data['case_dir'],f'tonal_tseries_m{mic}.png'),format = 'png')
+            plt.close()
+
+    return t,xn_avg,xn_bb,f_tonal,pxx_tonal,f_bb,pxx_bb
+
+
+def correlation(X,Y,fs,auto = True):
+    if X.ndim ==1:
+            X = X[None]
+    N = X.shape[-1]
+
+    if auto:
+        Xm = fft(X,axis = -1)
+        Sxy = 1 /N * np.conj(Xm) * Xm
+    else:
+        Sxy = np.zeros(np.insert(len(X),1,Y.shape),dtype = complex)
+        for i in range(len(X)):
+            Sxy[i] = 1 /N * np.conj(fft(np.roll(X,-i,axis = 0),axis = -1)) * fft(Y,axis = -1)
+    
+    Rxy = np.real(ifft(Sxy,axis = -1))
+    Rxy = (np.concatenate((Rxy[...,int(N/2):],Rxy[...,:int(N/2)]),axis = -1)).squeeze()
+    Cxy = (Rxy/(np.sqrt(np.mean(X**2,axis = -1))*np.sqrt(np.mean(Y**2,axis = -1)))[:,None]).squeeze()
+    t = ((np.arange(N)-N/2)[:,None]*fs**-1).squeeze()
+    return t,Rxy,Cxy
+
+
+
+
+
+def SD(Xm,fs):
     '''
-    This function filters the input signal in the frequency domain.
-    :param xn: time series
+    This function computes the single-sided spectral density (Gxx) from a linear spectrum.
+    :param Xm: complex two-sided linear spectrum [Pa]
     :param fs: sampling rate [Hz]
-    :param btype: type of filter (lowpass (lp), highpass (hp), bandpass (bp))
-    :param fc: cutoff frequency (-3dB), must be specified as a list if a bandpass filter is used.
     :return:
     '''
-    df = (len(xn)*fs**-1)**-1
-    f, Xm, Sxx, Gxx = PSD(xn, fs)
 
-    if btype == 'lp':
-        Xm[-int(fc/df):] = 0
-    elif btype == 'hp':
-        Xm[:int(fc/df)] = 0
-    elif btype == 'bp':
-        assert isinstance(fc,list), 'If a bandpass filter is being applied to the time series the low/high cutoff frequencies should be specified as a list.'
-        Xm[:int(fc[0]/df)] = 0
-        Xm[int(fc[-1]/df)+1:-int(fc[-1]/df)] = 0
-        Xm[-int(fc[0]/df)+1:] = 0
-
-    if filt_shaft_harm:
-        Xm[1::Nb] = 0
-
-    xn_filt = ifft(Xm,axis =0) * fs
-
-    return Xm,xn_filt
-
-
+    # number of points in record
+    N = Xm.shape[-1]
+    # temporal resolution
+    dt = fs ** -1
+    # single sided power spectral density [Pa^2/Hz]
+    Sxx = (dt * N) ** -1 * abs(Xm) ** 2
+    Gxx = Sxx[...,:int(N / 2)]
+    Gxx[...,1:-1] = 2 * Gxx[...,1:-1]
+    return Gxx
 
