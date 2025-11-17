@@ -90,6 +90,14 @@ def main(argv=None):
         type=int,
     )
     parser.add_argument(
+        "--filter_shaft_order",
+		action='store_true',
+		help="Include to filter out all shaft order harmonics.",
+		default=False,
+		required=False
+	)
+
+    parser.add_argument(
           '--align',                
         help="Include this flag in order to align the signals corresponding to each rotor revolution before averaging to extract the tonal noise component when performing the tonal separation.",
 		required=False,

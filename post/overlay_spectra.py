@@ -83,6 +83,13 @@ def main(argv=None):
         type=int,
     )
     parser.add_argument(
+        "--filter_shaft_order",
+		action='store_true',
+		help="Include to filter out all shaft order harmonics.",
+		default=False,
+		required=False
+	)
+    parser.add_argument(
           '--align',                
         help="Include this flag in order to align the signals corresponding to each rotor revolution before averaging to extract the tonal noise component when performing the tonal separation.",
 		required=False,
@@ -125,8 +132,8 @@ def main(argv=None):
         args.nperseg = int(data['Sampling Rate']/args.frequency_resolution)
         f,pxx = welch(data['Acoustic Data'][args.mics,args.start_ind:args.end_ind], fs=data['Sampling Rate'], window=args.window, nperseg=args.nperseg, noverlap=int(args.overlap*args.nperseg), nfft=None, detrend='constant', return_onesided=True, scaling='density', axis=-1, average='mean')
         if args.tonal_separation:
-            t,xn_avg,xn_bb,f_tonal,pxx_tonal,f_bb,pxx_bb = tonal_separation(data,args)
-            psd.update({case:{'f':f,'pxx':pxx,'t':t,'xn_avg':xn_avg,'xn_bb':xn_bb,'f_tonal':f_tonal,'pxx_tonal':pxx_tonal,'f_bb':f_bb,'pxx_bb':pxx_bb}})
+            t,xn_avg,xn_bb,f_tonal,pxx_tonal,pxx_err,f_bb,pxx_bb = tonal_separation(data,args)
+            psd.update({case:{'f':f,'pxx':pxx,'t':t,'xn_avg':xn_avg,'xn_bb':xn_bb,'f_tonal':f_tonal,'pxx_tonal':pxx_tonal,'pxx_err':pxx_err,'f_bb':f_bb,'pxx_bb':pxx_bb}})
         else:
             psd.update({case:{'f':f,'pxx':pxx}})
 
@@ -135,16 +142,27 @@ def main(argv=None):
         plt.subplots_adjust(left=0.15,bottom=0.15)
         for case_itr,case in enumerate(args.cases):
             if args.tonal_separation:
-                scatter= ax.scatter(psd[case]['f_tonal'],10*np.log10(psd[case]['pxx_tonal'][mic_itr]*np.diff(psd[case]['f_tonal'][:2])[0]/20e-6**2),label="_nolegend_",color = default_colors[case_itr])
-            line= ax.plot(psd[case]['f'],10*np.log10(psd[case]['pxx'][mic_itr]*np.diff(psd[case]['f'][:2])[0]/20e-6**2))
+                ax.errorbar(psd[case]['f_tonal'], 10*np.log10(psd[case]['pxx_tonal'][mic_itr]*np.diff(psd[case]['f_tonal'][:2])[0]/20e-6**2), yerr=10*np.log10(psd[case]['pxx_err'][mic_itr]), fmt='o',color = default_colors[case_itr],ecolor = default_colors[case_itr],capsize=6,capthick=2,zorder =len(args.cases)-case_itr-1)
+                # scatter= ax.scatter(psd[case]['f_tonal'],10*np.log10(psd[case]['pxx_tonal'][mic_itr]*np.diff(psd[case]['f_tonal'][:2])[0]/20e-6**2),label="_nolegend_",color = default_colors[case_itr])
+            line= ax.plot(psd[case]['f'],10*np.log10(psd[case]['pxx'][mic_itr]*np.diff(psd[case]['f'][:2])[0]/20e-6**2),zorder =len(args.cases)-case_itr-1)
             line[0].set(color=np.roll(default_colors,-case_itr)[0], linestyle=np.roll(linestyle,-case_itr)[0], label=case)
-        ax.set(xlabel = r'$Frequency \ [Hz]$',ylabel = r'$SPL, \ dB \ (re: \ 20 \mu Pa)$',ylim = [0,100],xscale = 'log',xlim = [100,10e3],title = f"Mic {mic}")
+        ax.set(xlabel = r'$Frequency \ [Hz]$',ylabel = r'$SPL, \ dB \ (re: \ 20 \mu Pa)$',ylim = [0,100],xscale = 'log',xlim = [10,10e3],title = f"Mic {mic}")
         # ax.legend(args.legend_labels,borderpad=0.2,handlelength=1,handletextpad=0.3,columnspacing=1.2,loc='lower center',ncol = len(args.legend_labels), bbox_to_anchor=(.5, -0.225),prop={'size': 10})
         ax.legend(args.legend_labels,prop={'size': 12})
         ax.grid()
         plt.savefig((f'psd_{"__".join(args.cases)}_m{mic}.png').replace(os.sep,'__'),format = 'png')
         plt.close()
 
+        if args.tonal_separation:
+            fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+            plt.subplots_adjust(left=0.175,bottom=0.15)
+            for case_itr,case in enumerate(args.cases):
+                ax.plot(psd[case]['t']/psd[case]['t'][-1],psd[case]['xn_avg'][mic_itr],c=np.roll(default_colors,-case_itr)[0], linestyle=np.roll(linestyle,-case_itr)[0], label=case)
+            ax.set(title = rf'$Mic \ {mic}$',xlabel = r'$Rotation$',ylabel = r'$Pressure \ [Pa]$')
+            ax.legend(args.legend_labels,prop={'size': 12})
+            ax.grid()
+            plt.savefig((f'p_tseries_{"__".join(args.cases)}_m{mic}.png').replace(os.sep,'__'),format = 'png')
+            plt.close()
 
 if __name__ == "__main__":
 	main()

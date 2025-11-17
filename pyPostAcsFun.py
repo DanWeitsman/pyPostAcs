@@ -330,16 +330,22 @@ def tonal_separation(data,args,**kwargs):
     :return:
     '''
 
-    def filt_harmonics(xn,harmonics):
+    def filt_harmonics(xn,harmonics, filter_shaft_order = False):
         Xm_upsampled = fft(xn,axis = 1)
+        
         if harmonics[0]!=0:
             Xm_upsampled[:,:harmonics[0]+1] = 0
             Xm_upsampled[:,-harmonics[0]:] = 0
         else:
-            Xm_upsampled[:,:harmonics[0]+1] = 0
+            Xm_upsampled[:,:harmonics[0]+1] = 0 
             # Xm_upsampled[:,-1] = 0
+        Xm_upsampled[:,harmonics[1]+1:-harmonics[1]] =0
+        
+        if filter_shaft_order:
+            N = Xm_upsampled.shape[1]
+            Xm_upsampled[:,:int(N/2)][:,1::2] = 0
+            Xm_upsampled[:,int(N/2):][:,::-1][:,::2] = 0
 
-        Xm_upsampled[:,harmonics[1]+1:-harmonics[1]] = 0
         xn = np.real(ifft(Xm_upsampled,axis = 1))
         return xn
 
@@ -368,21 +374,77 @@ def tonal_separation(data,args,**kwargs):
     N_records = len(acs_data_split)-2
     xn_upsampled= np.asarray([upsample(record,data['Sampling Rate'],N_upsample) for record in acs_data_split[1:-1]]).transpose(1,2,0)
     
+    t_upsample = np.arange(N_upsample)[:,None]/fs_upsample
+
+
+    if args.filter_harmonics is not None:
+        xn_upsampled = filt_harmonics(xn_upsampled,args.filter_harmonics,filter_shaft_order=args.filter_shaft_order)
+
+
     if args.align:
-        xn_upsampled_filt = filt_harmonics(xn_upsampled,[1,2])
-        # appends zeros to time series to avoid performing a circular cross-correlation 
-        xn_upsampled_zero_pad = np.concatenate((xn_upsampled_filt[0],np.zeros(xn_upsampled_filt[0].shape)),axis = 0)
+        
+        # if len(args.mics)>1:
+        #     mic_ind = 1
+        # else:
+        mic_ind = 1
+
+        # creates a reference waveform to align each record with
+        xn_upsampled_filt = np.concatenate((filt_harmonics(xn_upsampled[mic_ind,:,0][None],[0,2]).squeeze(),np.zeros(N_upsample)),axis = 0)
+        ref_wavform = np.zeros(2*N_upsample)
+        ref_wavform[:N_upsample] = xn_upsampled_filt.max()*np.sin(4*np.pi*np.arange(N_upsample)/(N_upsample-1))
+
+        # xn_upsampled_filt = filt_harmonics(xn_upsampled[1,:,0][None],[0,2]).squeeze()
+        # ref_wavform = xn_upsampled_filt.max()*np.sin(4*np.pi*np.arange(N_upsample)/(N_upsample-1))
+
+        t_ref,Rxy_ref,_ =correlation(X = ref_wavform,Y = xn_upsampled_filt,fs =fs_upsample[0] ,auto = False)
+        xn_upsampled[:,:,0] = np.roll(np.real(xn_upsampled[...,0]), -t_ref[Rxy_ref.argmax()]*fs_upsample[0], axis=-1)
+
+        # # appends zeros to time series to avoid performing a circular cross-correlation 
+        xn_upsampled_zero_pad = np.concatenate((xn_upsampled[mic_ind],np.zeros(xn_upsampled[mic_ind].shape)),axis = 0)
+
         # computes the cross-correlation between each record or rotor revolution relative to the first
-        t,Rxy,_ =correlation(X = xn_upsampled_zero_pad[:,0],Y = xn_upsampled_zero_pad.T,fs =fs_upsample ,auto = False)
-        # Peak of cross-correlation is the time delay by which to shift the other records
+        t,Rxy,_ =correlation(X = xn_upsampled_zero_pad[:,0].T,Y = xn_upsampled_zero_pad.T,fs =fs_upsample ,auto = False)
+        
+        # if np.abs(t_ref[Rxy_ref.argmax()])>t_ref[-1]/8:
+        #     # shifts the time series in the same direction as the reference waveform
+        #     if t_ref[Rxy_ref.argmax()]<0:
+        # # Peak of cross-correlation is the time delay by which to shift the other records
+        #         t_shift = t[:N_upsample+1][Rxy[:,:N_upsample+1].argmax(axis = -1),np.arange(len(Rxy))]
+        #     else:
+        #         t_shift = t[N_upsample:][Rxy[:,N_upsample:].argmax(axis = -1),np.arange(len(Rxy))]
+        # else:
         t_shift = t[Rxy.argmax(axis = -1),np.arange(len(Rxy))]
-        # Creates an array of indicies to shift the original signal by 
+
+       # Creates an array of indicies to shift the original signal by 
         shift_ind = (np.arange(N_upsample) + (t_shift*fs_upsample).astype(int)[:, None]).T % N_upsample
         # shifts the upsampled signal by the computed time delays
         xn_upsampled = np.take_along_axis(xn_upsampled, shift_ind[None], axis=1)
-    
-    if args.filter_harmonics is not None:
-        xn_upsampled = filt_harmonics(xn_upsampled,args.filter_harmonics)
+
+        # fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        # plt.subplots_adjust(left=0.15,bottom=0.15)
+        # # ax.plot(t_ref,(Rxy_ref))
+        # ax.plot(t[:,100],(Rxy[100]))
+
+        # fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        # plt.subplots_adjust(left=0.15,bottom=0.15)
+        # ax.plot(t_upsample[:,0],ref_wavform[:N_upsample])
+        # ax.plot(t_upsample[:,0],xn_upsampled_filt[:N_upsample])
+        # ax.plot(t_upsample[:,0], np.roll(np.real(xn_upsampled_filt[:N_upsample]), -t_ref[Rxy_ref.argmax()]*fs_upsample[0], axis=-1))
+
+        # ind = 449
+        # fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        # plt.subplots_adjust(left=0.15,bottom=0.15)
+        # ax.plot(t_upsample[:,0],np.real(xn_upsampled_filt[:N_upsample]))
+        # ax.plot(t_upsample[:,0],np.roll(np.real(xn_upsampled_filt[:N_upsample]), -t_ref[Rxy_ref.argmax()]*fs_upsample[0], axis=-1))
+        
+        # ax.plot(t_upsample[:,ind],np.real(xn_upsampled[0,:,ind]))
+        # ax.plot(t_upsample[:,ind],np.roll(np.real(xn_upsampled[0,:,ind]), -t_shift[ind]*fs_upsample[ind], axis=-1))
+
+        # ax.plot(t_upsample[:,0],np.roll(np.real(xn_upsampled_filt[0,:,0]), -t_ref[Rxy_ref.argmax()]*fs_upsample[0], axis=-1))
+
+
+        # ax.plot(t_upsample[:,ind],np.take_along_axis(np.real(xn_upsampled[0,:,ind]), shift_ind[:,ind],axis = 0))
+        # ax.plot(t_upsample[:,-1],np.roll(np.real(xn_upsampled_filt[1,:,-1]), -t_shift[-1]*fs_upsample[-1]))
 
     # computes the average across all records to extract tonal noise component
     xn_avg = np.real(np.mean(xn_upsampled,axis = -1))
@@ -431,7 +493,6 @@ def tonal_separation(data,args,**kwargs):
 
 
     t = np.arange(N_upsample)/fs_upsample.mean()
-    t_upsample = np.arange(N_upsample)[:,None]/fs_upsample
 
     f_tonal = np.arange(len(Gxx[0]))*fs_upsample.mean()/N_upsample
     df_tonal = np.diff(f_tonal[:2])[0]
@@ -464,24 +525,47 @@ def tonal_separation(data,args,**kwargs):
 
             ax.plot(f,10*np.log10(pxx[i]*df/20e-6**2))
             # ax.plot(f_bb,10*np.log10(pxx_bb[i]*df_bb/20e-6**2))
-            ax.set(xlabel = r'$Frequency \ [Hz]$',ylabel = r'$SPL, \ dB \ (re: \ 20 \mu Pa)$',title = rf'$Mic \ {mic}$',xscale = 'linear',xlim = [10,5e3],ylim = (0,None))
+            ax.set(xlabel = r'$Frequency \ [Hz]$',ylabel = r'$SPL, \ dB \ (re: \ 20 \mu Pa)$',title = rf'$Mic \ {mic}$',xscale = 'log',xlim = [10,15e3],ylim = (0,90))
             ax.grid()
             plt.savefig(os.path.join(data['case_dir'],f'tonal_sep_m{mic}.png'),format = 'png')
             plt.close()
 
+        # import matplotlib.colors as mc
+        # import colorsys
+        # c = colorsys.rgb_to_hls(*mc.to_rgb(default_colors[3]))
+        # c_amount = (np.arange(N_records)/(N_records-1))
+
+        # fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        # plt.subplots_adjust(left=0.175,bottom=0.15)
+        # for i in range(int(np.round(N_records/5))):
+        #     ax.plot((t_upsample[...,::5]/t_upsample[-1,::5])[:,i],np.real(xn_upsampled[0][...,::5][:,i]),c = colorsys.hls_to_rgb(c[0], c_amount[::5][i], c[2]))
+        # ax.set(xlabel = r'$Rotation$',ylabel = r'$Pressure \ [Pa]$',xlim = [0,1])
+        # ax.grid()
+
+        # fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        # plt.subplots_adjust(left=0.175,bottom=0.15)
+        # ax.plot(t_upsample[:,0]/t_upsample[-1,0],np.real(xn_upsampled[0,:,0]))
+
+        # fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
+        # plt.subplots_adjust(left=0.175,bottom=0.15)
+        # ax.plot(t_acs,data['Acoustic Data'][0].squeeze())
+        # ax.plot(data['Performance_Data']['Time (s)'],data['Performance_Data']['Motor2 RPM'])
+        # ax.set(title = rf'$Mic \ {mic}$',xlabel = r'$Time \ [s]$',ylabel = r'$Pressure \ [Pa]$',xlim = [8.96,9])
+        # ax.grid()
 
         for i,mic in enumerate(args.mics):
             fig, ax = plt.subplots(1,1,figsize = (6.4,4.5))
             plt.subplots_adjust(left=0.175,bottom=0.15)
-            ax.plot(t_upsample[:,::20],np.real(xn_upsampled[i][:,::20]),alpha = 0.5,c = 'gray')
-
-            ax.plot(t,xn_avg[i],linewidth = 1,c = 'black')
-            ax.set(title = rf'$Mic \ {mic}$',xlabel = r'$Time \ [sec]$',ylabel = r'$Pressure \ [Pa]$')
+            ax.plot(t_upsample/t_upsample[-1],np.real(xn_upsampled[i]),alpha = 0.3,c = 'gray')
+            ax.plot(t/t[-1],xn_avg[i],linewidth = 1,c = 'black',label = 'Averaged')
+            # ax.plot(t/t[-1],np.sin(4*np.pi*np.arange(N_upsample)/(N_upsample-1)),linewidth = 1,c = 'red',label = 'Reference')        
+            ax.set(title = rf'$Mic \ {mic}$',xlabel = r'$Rotation$',ylabel = r'$Pressure \ [Pa]$',xlim = [0,1],ylim = [None,None])
             ax.grid()
+            # ax.legend()
             plt.savefig(os.path.join(data['case_dir'],f'tonal_tseries_m{mic}.png'),format = 'png')
             plt.close()
 
-    return t,xn_avg,xn_bb,f_tonal,pxx_tonal,f_bb,pxx_bb
+    return t,xn_avg,xn_bb,f_tonal,pxx_tonal,yerr,f_bb,pxx_bb
 
 
 def correlation(X,Y,fs,auto = True):
